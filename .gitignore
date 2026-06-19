@@ -1,0 +1,10 @@
+.env
+*.log
+__pycache__/
+*.pyc
+.DS_Store
+.idea/
+.vscode/
+venv/
+.venv/
+agents/chanakya/phase_1_quantitative/chanakya_immutable_ledger.log

@@ -28,6 +28,9 @@ from concurrent.futures import ProcessPoolExecutor
 
 import psutil
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
+from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
+import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.sse import SseServerTransport
 
@@ -759,6 +762,14 @@ shared_sse_transport = SseServerTransport("/messages/")
 # ---------------------------------------------------------------------------
 app = FastAPI(title="RISHI Multi-Tenant Central Node", version="2.0.0")
 
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Mount the transport's POST handler as a proper ASGI sub-application so
 # tool-call POSTs from agents are routed to the correct SSE session.
 app.mount("/messages", app=shared_sse_transport.handle_post_message)
@@ -806,6 +817,43 @@ def health_check():
         "blackboard_max_keys": MAX_BLACKBOARD_KEYS,
         "registered_agent_count": len(AGENT_REGISTRY),
     }
+
+
+class ChatRequest(BaseModel):
+    prompt: str
+
+@app.post("/chat")
+async def chat_endpoint(req: ChatRequest):
+    """
+    Proxies a conversational prompt to the local Ollama instance,
+    injecting a strict System Prompt to ensure simple English responses.
+    """
+    system_prompt = (
+        "You are Chanakya, a friendly and highly knowledgeable financial advisor. "
+        "The user is asking you a question. Answer accurately, but you MUST use "
+        "extremely simple, plain English that an uneducated person with no financial "
+        "background can understand. Avoid all financial jargon. Use simple analogies "
+        "if necessary. Do NOT format your answer as a complex financial report."
+    )
+    
+    payload = {
+        "model": "llama3",
+        "messages": [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": req.prompt}
+        ],
+        "stream": False
+    }
+    
+    try:
+        async with httpx.AsyncClient() as client:
+            resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=60.0)
+            resp.raise_for_status()
+            data = resp.json()
+            return {"response": data.get("message", {}).get("content", "I am unable to formulate an answer.")}
+    except Exception as e:
+        logger.error(f"Error calling Ollama: {e}")
+        return {"response": "I'm sorry, I'm having trouble thinking right now. Please try again later."}
 
 
 if __name__ == "__main__":

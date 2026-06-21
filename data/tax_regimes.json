@@ -29,6 +29,7 @@
             {"limit": 1200000, "rate": 0.10},
             {"limit": 1600000, "rate": 0.15},
             {"limit": 2000000, "rate": 0.20},
+            {"limit": 2400000, "rate": 0.25},
             {"limit": null, "rate": 0.30}
         ],
         "surcharge_brackets": [

@@ -150,6 +150,7 @@ function showFinalReport(amount) {
       {limit: 1200000, rate: 0.10},
       {limit: 1600000, rate: 0.15},
       {limit: 2000000, rate: 0.20},
+      {limit: 2400000, rate: 0.25},
       {limit: Infinity, rate: 0.30}
   ];
   

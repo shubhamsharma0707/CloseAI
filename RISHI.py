@@ -265,15 +265,26 @@ async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024
     slabs = []
     tax = Decimal("0")
     
-    # India Income Tax New Regime FY 2024-25
-    brackets = [
-        (Decimal("300000"), Decimal("0.00")),
-        (Decimal("700000"), Decimal("0.05")),
-        (Decimal("1000000"), Decimal("0.10")),
-        (Decimal("1200000"), Decimal("0.15")),
-        (Decimal("1500000"), Decimal("0.20")),
-        (Decimal("Infinity"), Decimal("0.30"))
-    ]
+    # Load bitemporal tax regimes
+    import os
+    regimes_path = os.path.join(os.path.dirname(__file__), "data", "tax_regimes.json")
+    try:
+        with open(regimes_path, "r") as f:
+            tax_regimes = json.load(f)
+    except Exception as e:
+        return json.dumps({"status": "error", "message": f"Failed to load tax regimes: {e}"})
+
+    if regime not in tax_regimes:
+        return json.dumps({"status": "error", "message": f"Unknown tax regime: {regime}"})
+        
+    regime_data = tax_regimes[regime]
+    brackets = []
+    for b in regime_data["brackets"]:
+        limit = Decimal("Infinity") if b["limit"] is None else Decimal(str(b["limit"]))
+        rate = Decimal(str(b["rate"]))
+        brackets.append((limit, rate))
+    
+    cess_rate = Decimal(str(regime_data.get("cess_rate", "0.0")))
     
     previous_limit = Decimal("0")
     for limit, rate in brackets:
@@ -291,8 +302,8 @@ async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024
         else:
             break
 
-    # Health and Education Cess (4%)
-    cess = tax * Decimal("0.04")
+    # Health and Education Cess
+    cess = tax * cess_rate
     total_tax = tax + cess
     
     exact_result = str(total_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))

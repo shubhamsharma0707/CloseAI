@@ -10,9 +10,6 @@ export class Dashboard {
   render() {
     this.container.innerHTML = `
       <div class="section" style="padding-top: calc(var(--nav-h) + 3rem);">
-        <div class="hero-eyebrow" style="animation: fadeSlideUp 0.7s ease both;">
-          <span class="live-badge"><span class="live-dot"></span>RISHI Node Status: ONLINE</span>
-        </div>
         <h1 class="section-title" style="animation: fadeSlideUp 0.8s ease 0.1s both; margin-bottom: 2rem;">
           CloseAI Dashboard
         </h1>

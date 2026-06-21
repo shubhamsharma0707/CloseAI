@@ -136,9 +136,14 @@ def main() -> int:
     print("\n[Cleanup] Stopping RISHI server...")
     server_proc.terminate()
     try:
-        server_proc.wait(timeout=5)
+        server_out, _ = server_proc.communicate(timeout=5)
     except subprocess.TimeoutExpired:
         server_proc.kill()
+        server_out, _ = server_proc.communicate()
+    
+    print("\n--- RISHI SERVER LOGS ---")
+    print(server_out)
+    print("-------------------------\n")
 
     # ── Milestone checks ──────────────────────────────────────────────────────
     print()

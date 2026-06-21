@@ -108,6 +108,43 @@ class ChanakyaOrchestrator:
             logger.error("Make sure Ollama is running in the background ('ollama serve') and 'llama3' is pulled.")
             return None
 
+    async def amend_proposal_with_ollama(self, original_proposal: str, rejection_reason: str) -> str | None:
+        """
+        Uses Ollama to dynamically amend a non-compliant proposal based on the rejection reason.
+        """
+        logger.info(f"🧠 Asking Chanakya (Llama3) to amend the proposal to resolve: '{rejection_reason}'")
+        
+        system_prompt = f"""
+        You are Chanakya, a financial compliance expert. 
+        A proposed action was rejected by the Ethical Compliance Agent for the following reason:
+        "{rejection_reason}"
+        
+        Original Proposal:
+        "{original_proposal}"
+        
+        Rewrite the proposed action so that it satisfies the compliance requirements while keeping the financial intent as similar as possible. 
+        Do not explain yourself or use conversational text. Reply ONLY with the rewritten proposal string.
+        """
+        
+        try:
+            from ollama import AsyncClient
+            response = await AsyncClient().chat(model='llama3', messages=[
+                {'role': 'system', 'content': system_prompt}
+            ])
+            
+            msg = response.get('message', None) if isinstance(response, dict) else None
+            if msg is not None:
+                content = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
+            else:
+                content = getattr(getattr(response, 'message', None), 'content', '')
+
+            amended_proposal = content.strip().strip('"')
+            return amended_proposal
+
+        except Exception as e:
+            logger.error(f"❌ LLM Amendment Failed: {e}")
+            return None
+
     async def run_full_financial_workflow(self, principal: str, tax_rate: str, proposed_action: str):
         """
         Executes the complete end-to-end multi-agent financial workflow.
@@ -128,12 +165,33 @@ class ChanakyaOrchestrator:
 
         # PHASE 2: QUALITATIVE & STRATEGY
         logger.info("\n>>> PHASE 2: ETHICAL COMPLIANCE & STRATEGY")
-        compliance_result = await self.agent_ethical.evaluate_proposal(proposed_action)
         
-        if compliance_result and compliance_result.get("status") == "APPROVED":
-            await self.agent_critical.analyze_financial_strategy(proposed_action)
+        max_retries = 3
+        attempt = 0
+        current_proposal = proposed_action
+        compliance_approved = False
+        
+        while attempt < max_retries and not compliance_approved:
+            compliance_result = await self.agent_ethical.evaluate_proposal(current_proposal)
+            if compliance_result and compliance_result.get("status") == "APPROVED":
+                compliance_approved = True
+            else:
+                attempt += 1
+                reason = compliance_result.get("reason", "Unknown policy violation") if compliance_result else "Unknown Error"
+                logger.warning(f"Proposal rejected: {reason}. Attempting to amend (Attempt {attempt}/{max_retries})...")
+                
+                amended_proposal = await self.amend_proposal_with_ollama(current_proposal, reason)
+                if amended_proposal:
+                    current_proposal = amended_proposal
+                    logger.info(f"Amended proposal: '{current_proposal}'")
+                else:
+                    logger.error("Failed to amend proposal. Halting workflow.")
+                    return
+
+        if compliance_approved:
+            await self.agent_critical.analyze_financial_strategy(current_proposal)
         else:
-            logger.warning(f"Proposal rejected by Compliance. Halting further execution.")
+            logger.error(f"Max retries ({max_retries}) reached for compliance. Halting workflow.")
             return
 
         # PHASE 3: OUTPUT, VISUALIZATION & ESG
@@ -157,7 +215,8 @@ async def main():
     ceo = ChanakyaOrchestrator()
     
     # 1. Provide a natural language prompt instead of hardcoded variables
-    human_input = "We have a core fund of $25,400,500. Calculate an estimated 12.5% tax provision on this. Next, I want to evaluate if we can reallocate 20% of the remaining capital to aggressive green-energy acquisitions in Europe to lower our carbon footprint."
+    # Testing dynamic loop: we explicitly use a non-compliant term "offshore shell company"
+    human_input = "We have a core fund of $25,400,500. Calculate an estimated 12.5% tax provision on this. Next, I want to evaluate if we can reallocate 20% of the remaining capital to an offshore shell company to lower our tax burden."
     
     # 2. Let the LLM extract the parameters
     intent_data = await ceo.parse_intent_with_ollama(human_input)

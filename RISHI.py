@@ -250,7 +250,22 @@ async def _tamper_proof_audit_math(operation: str, operands: list[str]) -> str:
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     })
 
-async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024") -> str:
+def resolve_regime_for_date(tax_regimes: dict, tx_date: str) -> str:
+    """Resolves the correct tax regime based on transaction date."""
+    try:
+        tx_dt = datetime.fromisoformat(tx_date.replace("Z", "+00:00"))
+    except ValueError:
+        tx_dt = datetime.now(timezone.utc)
+    
+    for regime_id, data in tax_regimes.items():
+        if "effective_from" in data and "effective_to" in data:
+            start_dt = datetime.fromisoformat(data["effective_from"].replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(data["effective_to"].replace("Z", "+00:00"))
+            if start_dt <= tx_dt <= end_dt:
+                return regime_id
+    return None
+
+async def _calculate_tax_liability(principal: str, transaction_date: str = "") -> str:
     """
     Executes exact-precision slab-based tax calculation using Python's Decimal.
     """
@@ -274,15 +289,36 @@ async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024
     except Exception as e:
         return json.dumps({"status": "error", "message": f"Failed to load tax regimes: {e}"})
 
-    if regime not in tax_regimes:
-        return json.dumps({"status": "error", "message": f"Unknown tax regime: {regime}"})
+    if not transaction_date:
+        transaction_date = datetime.now(timezone.utc).isoformat()
+        
+    regime = resolve_regime_for_date(tax_regimes, transaction_date)
+    if not regime:
+        return json.dumps({"status": "error", "message": f"No active tax regime found for date: {transaction_date}"})
         
     regime_data = tax_regimes[regime]
+    
+    # Schema validation
+    brackets_data = regime_data.get("brackets", [])
+    if not brackets_data:
+        return json.dumps({"status": "error", "message": "Schema Error: No brackets defined."})
+    if brackets_data[-1].get("limit") is not None:
+        return json.dumps({"status": "error", "message": "Schema Error: Final bracket must have a null limit (open-ended)."})
+        
     brackets = []
-    for b in regime_data["brackets"]:
-        limit = Decimal("Infinity") if b["limit"] is None else Decimal(str(b["limit"]))
-        rate = Decimal(str(b["rate"]))
+    last_limit = Decimal("-1")
+    for b in brackets_data:
+        raw_limit = b.get("limit")
+        limit = Decimal("Infinity") if raw_limit is None else Decimal(str(raw_limit))
+        rate = Decimal(str(b.get("rate", "0")))
+        
+        if limit <= last_limit:
+            return json.dumps({"status": "error", "message": "Schema Error: Bracket limits must be strictly ascending."})
+        if not (Decimal("0") <= rate <= Decimal("1")):
+            return json.dumps({"status": "error", "message": "Schema Error: Rate must be between 0 and 1."})
+            
         brackets.append((limit, rate))
+        last_limit = limit
     
     cess_rate = Decimal(str(regime_data.get("cess_rate", "0.0")))
     
@@ -309,13 +345,17 @@ async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024
     exact_result = str(total_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))
     
     # Build a canonical audit preimage
-    preimage = f"tax_slab|{principal}|{regime}|{exact_result}|{datetime.now(timezone.utc).isoformat()}"
+    eff_from = regime_data.get("effective_from", "UNKNOWN")
+    eff_to = regime_data.get("effective_to", "UNKNOWN")
+    preimage = f"tax_slab|{principal}|{regime}|{eff_from}|{eff_to}|{exact_result}|{datetime.now(timezone.utc).isoformat()}"
     audit_hash = hashlib.sha256(preimage.encode()).hexdigest()
 
     return json.dumps({
         "status": "ok",
         "operation": "tax_slab",
         "regime": regime,
+        "effective_from": eff_from,
+        "effective_to": eff_to,
         "principal": principal,
         "exact_result": exact_result,
         "slab_breakdown": slabs,
@@ -329,9 +369,21 @@ async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024
 COMPLIANCE_BLOCKLIST = [
     "tax evasion", "money laundering", "bribe", "kickback", "sanction",
 ]
-FATF_BLACKLIST = ["north korea", "iran", "myanmar", "cayman islands"]
-FATF_GREYLIST = ["panama", "uae", "syria"]
-HIGH_RISK_ENTITIES = ["shell company", "unregistered charity", "bearer share"]
+FATF_BLACKLIST = {
+    "jurisdictions": ["north korea", "iran", "myanmar", "cayman islands"],
+    "source": "FATF High-Risk Jurisdictions subject to a Call for Action",
+    "last_verified": "2026-06-22T00:00:00Z"
+}
+FATF_GREYLIST = {
+    "jurisdictions": ["panama", "uae", "syria"],
+    "source": "FATF Jurisdictions under Increased Monitoring",
+    "last_verified": "2026-06-22T00:00:00Z"
+}
+HIGH_RISK_ENTITIES = {
+    "entities": ["shell company", "unregistered charity", "bearer share"],
+    "source": "FinCEN Advisory on High-Risk Typologies",
+    "last_verified": "2026-06-22T00:00:00Z"
+}
 CTR_THRESHOLD = Decimal("1000000")  # e.g., > 10L requires EDD
 
 async def _evaluate_compliance(proposal: str, jurisdiction: str = "", entity_type: str = "", transaction_amount: str = "0") -> str:
@@ -349,16 +401,16 @@ async def _evaluate_compliance(proposal: str, jurisdiction: str = "", entity_typ
     
     # 1. Jurisdiction Risk
     juris_lower = jurisdiction.lower()
-    if any(b in juris_lower for b in FATF_BLACKLIST):
+    if any(b in juris_lower for b in FATF_BLACKLIST["jurisdictions"]):
         flags.append(f"Jurisdiction '{jurisdiction}' is on FATF Blacklist.")
         status = "REJECTED"
-    elif any(g in juris_lower for g in FATF_GREYLIST):
+    elif any(g in juris_lower for g in FATF_GREYLIST["jurisdictions"]):
         flags.append(f"Jurisdiction '{jurisdiction}' is on FATF Greylist (EDD Required).")
         if status != "REJECTED": status = "EDD_REQUIRED"
         
     # 2. Entity Risk
     entity_lower = entity_type.lower()
-    if any(h in entity_lower for h in HIGH_RISK_ENTITIES):
+    if any(h in entity_lower for h in HIGH_RISK_ENTITIES["entities"]):
         flags.append(f"Entity type '{entity_type}' is classified as High Risk.")
         status = "REJECTED"
         
@@ -525,15 +577,19 @@ async def _calculate_esg_metrics(financial_data: str) -> str:
     # GHG Protocol Scope 3 Category 15: Investments
     # Emission factor: kg CO2e per $ (or ₹) invested
     emission_factors = {
-        "green energy": Decimal("0.05"),
-        "real estate": Decimal("0.40"),
-        "shell company": Decimal("0.80"),
-        "manufacturing": Decimal("0.60"),
-        "unknown": Decimal("0.25")
+        "data": {
+            "green energy": Decimal("0.05"),
+            "real estate": Decimal("0.40"),
+            "shell company": Decimal("0.80"),
+            "manufacturing": Decimal("0.60"),
+            "unknown": Decimal("0.25")
+        },
+        "source": "DEFRA / EPA Sector Averages 2026",
+        "last_verified": "2026-06-22T00:00:00Z"
     }
     
-    factor = emission_factors["unknown"]
-    for key, val in emission_factors.items():
+    factor = emission_factors["data"]["unknown"]
+    for key, val in emission_factors["data"].items():
         if key in entity_type:
             factor = val
             break

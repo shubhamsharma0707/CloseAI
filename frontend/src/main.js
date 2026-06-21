@@ -111,8 +111,10 @@ async function runOrchestration() {
   
   // Parse numbers from prompt dynamically
   let amount = "0";
+  // Clean commas for parsing
+  const cleanPrompt = prompt.replace(/,/g, '');
   // Match a number optionally followed by Cr, M, or L/Lakh
-  const match = prompt.match(/(\d+(?:\.\d+)?)\s*(Cr|M|Lakh|L)?/i);
+  const match = cleanPrompt.match(/(\d+(?:\.\d+)?)\s*(Cr|M|Lakh|L)?/i);
   if (match) {
     let num = parseFloat(match[1]);
     const suffix = match[2] ? match[2].toLowerCase() : "";
@@ -181,9 +183,39 @@ async function runOrchestration() {
   appendLog('reporting', 'Generated Executive Summary Dashboard.');
   setNodeState('reporting', 'completed');
   
-  // Calculate fake numbers for the dashboard
+  // Calculate accurate CA-grade tax (India New Regime 2024 equivalent)
   const principal = parseFloat(amount);
-  const tax = principal * 0.312; // ~31.2% effective
+  
+  let baseTax = 0;
+  const brackets = [
+      {limit: 400000, rate: 0.00},
+      {limit: 800000, rate: 0.05},
+      {limit: 1200000, rate: 0.10},
+      {limit: 1600000, rate: 0.15},
+      {limit: 2000000, rate: 0.20},
+      {limit: Infinity, rate: 0.30}
+  ];
+  
+  let previousLimit = 0;
+  for (let b of brackets) {
+      if (principal > previousLimit) {
+          let taxable = Math.min(principal - previousLimit, b.limit - previousLimit);
+          baseTax += taxable * b.rate;
+          previousLimit = b.limit;
+      } else {
+          break;
+      }
+  }
+  
+  let surchargeRate = 0;
+  if (principal > 20000000) surchargeRate = 0.25;
+  else if (principal > 10000000) surchargeRate = 0.15;
+  else if (principal > 5000000) surchargeRate = 0.10;
+  
+  const surcharge = baseTax * surchargeRate;
+  const cess = (baseTax + surcharge) * 0.04;
+  
+  const tax = baseTax + surcharge + cess;
   const net = principal - tax;
   
   // Show Final Report

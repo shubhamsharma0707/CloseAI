@@ -11,6 +11,12 @@
             {"limit": 1500000, "rate": 0.20},
             {"limit": null, "rate": 0.30}
         ],
+        "surcharge_brackets": [
+            {"limit": 5000000, "rate": 0.00},
+            {"limit": 10000000, "rate": 0.10},
+            {"limit": 20000000, "rate": 0.15},
+            {"limit": null, "rate": 0.25}
+        ],
         "cess_rate": 0.04
     },
     "india_new_2025": {
@@ -25,6 +31,12 @@
             {"limit": 2000000, "rate": 0.20},
             {"limit": null, "rate": 0.30}
         ],
-        "cess_rate": 0.05
+        "surcharge_brackets": [
+            {"limit": 5000000, "rate": 0.00},
+            {"limit": 10000000, "rate": 0.10},
+            {"limit": 20000000, "rate": 0.15},
+            {"limit": null, "rate": 0.25}
+        ],
+        "cess_rate": 0.04
     }
 }

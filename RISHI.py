@@ -320,6 +320,17 @@ async def _calculate_tax_liability(principal: str, transaction_date: str = "") -
         brackets.append((limit, rate))
         last_limit = limit
     
+    # Surcharge Brackets parsing
+    surcharge_brackets_data = regime_data.get("surcharge_brackets", [])
+    surcharge_brackets = []
+    if surcharge_brackets_data:
+        last_s_limit = Decimal("-1")
+        for b in surcharge_brackets_data:
+            raw_s_limit = b.get("limit")
+            s_limit = Decimal("Infinity") if raw_s_limit is None else Decimal(str(raw_s_limit))
+            s_rate = Decimal(str(b.get("rate", "0")))
+            surcharge_brackets.append((s_limit, s_rate))
+    
     cess_rate = Decimal(str(regime_data.get("cess_rate", "0.0")))
     
     previous_limit = Decimal("0")
@@ -338,9 +349,18 @@ async def _calculate_tax_liability(principal: str, transaction_date: str = "") -
         else:
             break
 
+    # Surcharge
+    surcharge_rate = Decimal("0.0")
+    for s_limit, s_rate in surcharge_brackets:
+        if income <= s_limit:
+            surcharge_rate = s_rate
+            break
+
+    surcharge = tax * surcharge_rate
+    
     # Health and Education Cess
-    cess = tax * cess_rate
-    total_tax = tax + cess
+    cess = (tax + surcharge) * cess_rate
+    total_tax = tax + surcharge + cess
     
     exact_result = str(total_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))
     
@@ -358,7 +378,12 @@ async def _calculate_tax_liability(principal: str, transaction_date: str = "") -
         "effective_to": eff_to,
         "principal": principal,
         "exact_result": exact_result,
-        "slab_breakdown": slabs,
+        "details": {
+            "base_tax": str(tax.quantize(Decimal("0.01"))),
+            "surcharge": str(surcharge.quantize(Decimal("0.01"))),
+            "cess": str(cess.quantize(Decimal("0.01"))),
+            "slabs": slabs
+        },
         "audit_hash": audit_hash,
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     })

@@ -77,10 +77,16 @@ class DeterministicAuditAgent:
                         await session.initialize()
                         logger.info("Secure channel established.")
 
-                        result = await session.call_tool(
-                            "tamper_proof_audit_math",
-                            {"operation": operation, "operands": operands},
-                        )
+                        if operation == "calculate_tax_liability":
+                            result = await session.call_tool(
+                                "calculate_tax_liability",
+                                {"principal": operands[0]},
+                            )
+                        else:
+                            result = await session.call_tool(
+                                "tamper_proof_audit_math",
+                                {"operation": operation, "operands": operands},
+                            )
 
                         response_data = json.loads(self._safe_text(result))
 

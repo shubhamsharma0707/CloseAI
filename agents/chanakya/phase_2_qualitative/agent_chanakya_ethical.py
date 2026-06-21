@@ -37,13 +37,13 @@ class EthicalComplianceAgent:
             return "Error: Empty response from server."
         return result.content[0].text
 
-    async def evaluate_proposal(self, proposal: str) -> dict | None:
+    async def evaluate_proposal(self, proposal: str, jurisdiction: str = "", entity_type: str = "", transaction_amount: str = "0") -> dict | None:
         """
         Connects to the RISHI server, calls the `evaluate_compliance` tool,
         and returns the compliance verdict as a parsed dict.
 
         Returns:
-            dict with 'status' ("APPROVED" | "REJECTED") and 'reason'.
+            dict with 'status' ("APPROVED" | "REJECTED" | "EDD_REQUIRED") and 'reason'.
             None on network / timeout failure.
         """
         logger.info(f"Submitting proposal for compliance evaluation: '{proposal[:80]}'")
@@ -57,7 +57,12 @@ class EthicalComplianceAgent:
 
                         result = await session.call_tool(
                             "evaluate_compliance",
-                            {"proposal": proposal},
+                            {
+                                "proposal": proposal,
+                                "jurisdiction": jurisdiction,
+                                "entity_type": entity_type,
+                                "transaction_amount": transaction_amount
+                            },
                         )
 
                         raw = self._safe_text(result)
@@ -68,6 +73,8 @@ class EthicalComplianceAgent:
 
                         if status == "APPROVED":
                             logger.info(f"✅ COMPLIANCE APPROVED — {reason}")
+                        elif status == "EDD_REQUIRED":
+                            logger.warning(f"⚠️ EDD REQUIRED — {reason}")
                         else:
                             logger.warning(f"🚫 COMPLIANCE REJECTED — {reason}")
 

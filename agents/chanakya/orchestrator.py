@@ -54,8 +54,10 @@ class ChanakyaOrchestrator:
         
         Required JSON keys:
         - "principal": The main monetary amount as a string (e.g., "1500000.00"). Remove currency symbols and commas.
-        - "tax_rate": The tax rate or percentage as a decimal string (e.g., "0.05" for 5%).
         - "proposed_action": A summary of what the user wants to do strategically.
+        - "jurisdiction": The geographical jurisdiction for the action (e.g., "Europe", "Cayman Islands", "India"). Return "Unknown" if not specified.
+        - "entity_type": The type of entity involved (e.g., "Corporation", "Shell Company"). Return "Unknown" if not specified.
+        - "reallocation_percentage": The percentage of remaining capital to be reallocated, as a decimal string (e.g., "0.20" for 20%). Return "0" if not specified.
         """
         
         try:
@@ -83,20 +85,20 @@ class ChanakyaOrchestrator:
             clean_principal = raw_principal.replace('$', '').replace(',', '').replace(' ', '').strip()
             parsed_data['principal'] = clean_principal
 
-            # ── Normalise tax_rate ──────────────────────────────────────────
-            # LLMs often return "12.5" when they mean "0.125".  If the value
-            # is >= 1.0 we treat it as a percentage and convert to decimal.
-            raw_rate = str(parsed_data.get('tax_rate', '0'))
-            clean_rate = raw_rate.replace('%', '').replace(' ', '').strip()
+            # ── Normalise reallocation_percentage ───────────────────────────────
+            raw_alloc = str(parsed_data.get('reallocation_percentage', '0'))
+            clean_alloc = raw_alloc.replace('%', '').replace(' ', '').strip()
             try:
-                rate_float = float(clean_rate)
-                if rate_float >= 1.0:
-                    rate_float /= 100.0
-                    logger.info(f"  tax_rate normalised: '{raw_rate}' → '{rate_float}'")
-                parsed_data['tax_rate'] = f"{rate_float:.6f}".rstrip('0').rstrip('.')
+                alloc_float = float(clean_alloc)
+                if alloc_float >= 1.0:
+                    alloc_float /= 100.0
+                parsed_data['reallocation_percentage'] = f"{alloc_float:.6f}".rstrip('0').rstrip('.')
             except ValueError:
-                logger.warning(f"  tax_rate '{raw_rate}' not numeric — defaulting to 0")
-                parsed_data['tax_rate'] = '0'
+                parsed_data['reallocation_percentage'] = '0'
+
+            # Set defaults for new fields
+            parsed_data.setdefault('jurisdiction', 'Unknown')
+            parsed_data.setdefault('entity_type', 'Unknown')
 
             logger.info("✅ LLM Intent Parsing Successful!")
             logger.info(json.dumps(parsed_data, indent=2))
@@ -145,7 +147,7 @@ class ChanakyaOrchestrator:
             logger.error(f"❌ LLM Amendment Failed: {e}")
             return None
 
-    async def run_full_financial_workflow(self, principal: str, tax_rate: str, proposed_action: str):
+    async def run_full_financial_workflow(self, principal: str, reallocation_percentage: str, proposed_action: str, jurisdiction: str, entity_type: str):
         """
         Executes the complete end-to-end multi-agent financial workflow.
         """
@@ -153,12 +155,17 @@ class ChanakyaOrchestrator:
         logger.info("🚀 INITIATING FULL CHANAKYA FINANCIAL WORKFLOW")
         logger.info("==================================================")
 
-        # PHASE 1: QUANTITATIVE & AUDITABILITY
-        logger.info("\n>>> PHASE 1: QUANTITATIVE EXECUTION")
-        audit_result = await self.agent_deterministic.execute_audit("multiply", [principal, tax_rate])
+        # PHASE 1: QUANTITATIVE & AUDITABILITY (Tax Engine)
+        logger.info("\n>>> PHASE 1: QUANTITATIVE EXECUTION (TAX ENGINE)")
+        audit_result = await self.agent_deterministic.execute_audit("calculate_tax_liability", [principal])
         
-        if audit_result:
+        if audit_result and audit_result.get("status") == "ok":
             await self.agent_auditability.secure_ledger_entry("latest_tax_audit_hash")
+            tax_liability = float(audit_result.get("exact_result", "0"))
+            remaining_capital = float(principal) - tax_liability
+            transaction_amount = remaining_capital * float(reallocation_percentage or "0")
+            logger.info(f"Calculated Tax: {tax_liability} | Remaining Capital: {remaining_capital}")
+            logger.info(f"Transaction Amount ({float(reallocation_percentage)*100}% allocation): {transaction_amount}")
         else:
             logger.error("Phase 1 Failed: Deterministic math error. Halting workflow.")
             return
@@ -172,9 +179,16 @@ class ChanakyaOrchestrator:
         compliance_approved = False
         
         while attempt < max_retries and not compliance_approved:
-            compliance_result = await self.agent_ethical.evaluate_proposal(current_proposal)
-            if compliance_result and compliance_result.get("status") == "APPROVED":
+            compliance_result = await self.agent_ethical.evaluate_proposal(
+                current_proposal,
+                jurisdiction=jurisdiction,
+                entity_type=entity_type,
+                transaction_amount=str(transaction_amount)
+            )
+            if compliance_result and compliance_result.get("status") in ["APPROVED", "EDD_REQUIRED"]:
                 compliance_approved = True
+                if compliance_result.get("status") == "EDD_REQUIRED":
+                    logger.warning(f"⚠️ EDD REQUIRED: {compliance_result.get('reason')}")
             else:
                 attempt += 1
                 reason = compliance_result.get("reason", "Unknown policy violation") if compliance_result else "Unknown Error"
@@ -214,9 +228,8 @@ class ChanakyaOrchestrator:
 async def main():
     ceo = ChanakyaOrchestrator()
     
-    # 1. Provide a natural language prompt instead of hardcoded variables
-    # Testing dynamic loop: we explicitly use a non-compliant term "offshore shell company"
-    human_input = "We have a core fund of $25,400,500. Calculate an estimated 12.5% tax provision on this. Next, I want to evaluate if we can reallocate 20% of the remaining capital to an offshore shell company to lower our tax burden."
+    # Testing the CA-grade rule engine
+    human_input = "We have a core income of ₹2,50,00,000. Calculate our tax liability under the new Indian regime. Next, reallocate 20% of the remaining capital to a green energy fund in India."
     
     # 2. Let the LLM extract the parameters
     intent_data = await ceo.parse_intent_with_ollama(human_input)
@@ -225,8 +238,10 @@ async def main():
     if intent_data:
         await ceo.run_full_financial_workflow(
             principal=str(intent_data.get("principal", "0")),
-            tax_rate=str(intent_data.get("tax_rate", "0")),
-            proposed_action=intent_data.get("proposed_action", "")
+            reallocation_percentage=str(intent_data.get("reallocation_percentage", "0")),
+            proposed_action=intent_data.get("proposed_action", ""),
+            jurisdiction=intent_data.get("jurisdiction", "Unknown"),
+            entity_type=intent_data.get("entity_type", "Unknown")
         )
 
 if __name__ == "__main__":

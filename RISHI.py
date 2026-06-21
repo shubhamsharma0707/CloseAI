@@ -89,7 +89,7 @@ AGENT_REGISTRY: dict[str, dict] = {
     # Phase 1 — Quantitative
     "agent_chanakya_deterministic": {
         "role": "quantitative_analyst",
-        "allowed_tools": ["tamper_proof_audit_math", "write_blackboard"],
+        "allowed_tools": ["tamper_proof_audit_math", "calculate_tax_liability", "write_blackboard"],
     },
     "agent_chanakya_auditability": {
         "role": "ledger_auditor",
@@ -250,34 +250,133 @@ async def _tamper_proof_audit_math(operation: str, operands: list[str]) -> str:
         "timestamp_utc": datetime.now(timezone.utc).isoformat(),
     })
 
+async def _calculate_tax_liability(principal: str, regime: str = "india_new_2024") -> str:
+    """
+    Executes exact-precision slab-based tax calculation using Python's Decimal.
+    """
+    try:
+        income = Decimal(principal)
+    except InvalidOperation as exc:
+        return json.dumps({"status": "error", "message": f"Non-numeric principal: {exc}"})
+
+    if income < 0:
+        return json.dumps({"status": "error", "message": "Income cannot be negative."})
+
+    slabs = []
+    tax = Decimal("0")
+    
+    # India Income Tax New Regime FY 2024-25
+    brackets = [
+        (Decimal("300000"), Decimal("0.00")),
+        (Decimal("700000"), Decimal("0.05")),
+        (Decimal("1000000"), Decimal("0.10")),
+        (Decimal("1200000"), Decimal("0.15")),
+        (Decimal("1500000"), Decimal("0.20")),
+        (Decimal("Infinity"), Decimal("0.30"))
+    ]
+    
+    previous_limit = Decimal("0")
+    for limit, rate in brackets:
+        if income > previous_limit:
+            taxable_in_slab = min(income - previous_limit, limit - previous_limit)
+            slab_tax = taxable_in_slab * rate
+            slabs.append({
+                "bracket": f"{previous_limit}-{limit}",
+                "taxable_amount": str(taxable_in_slab.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)),
+                "rate": str(rate),
+                "tax": str(slab_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))
+            })
+            tax += slab_tax
+            previous_limit = limit
+        else:
+            break
+
+    # Health and Education Cess (4%)
+    cess = tax * Decimal("0.04")
+    total_tax = tax + cess
+    
+    exact_result = str(total_tax.quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN))
+    
+    # Build a canonical audit preimage
+    preimage = f"tax_slab|{principal}|{regime}|{exact_result}|{datetime.now(timezone.utc).isoformat()}"
+    audit_hash = hashlib.sha256(preimage.encode()).hexdigest()
+
+    return json.dumps({
+        "status": "ok",
+        "operation": "tax_slab",
+        "regime": regime,
+        "principal": principal,
+        "exact_result": exact_result,
+        "slab_breakdown": slabs,
+        "audit_hash": audit_hash,
+        "timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    })
+
 
 # ── 6b. Compliance evaluation ────────────────────────────────────────────────
-# A rule-based compliance engine.  Extend with real policy documents or an
-# LLM call in production.
+# A structured rule-based compliance engine using FATF lists and CTR triggers.
 COMPLIANCE_BLOCKLIST = [
-    "offshore", "shell company", "tax evasion", "money laundering",
-    "bribe", "kickback", "sanction",
+    "tax evasion", "money laundering", "bribe", "kickback", "sanction",
 ]
+FATF_BLACKLIST = ["north korea", "iran", "myanmar", "cayman islands"]
+FATF_GREYLIST = ["panama", "uae", "syria"]
+HIGH_RISK_ENTITIES = ["shell company", "unregistered charity", "bearer share"]
+CTR_THRESHOLD = Decimal("1000000")  # e.g., > 10L requires EDD
 
-
-async def _evaluate_compliance(proposal: str) -> str:
+async def _evaluate_compliance(proposal: str, jurisdiction: str = "", entity_type: str = "", transaction_amount: str = "0") -> str:
     """
-    Evaluates a financial proposal against a built-in policy rule set.
-    Returns APPROVED or REJECTED with a reason.
+    Evaluates a financial proposal against a structured AML/KYC rule set.
+    Returns APPROVED, REJECTED, or EDD_REQUIRED with detailed flags.
     """
+    try:
+        amount = Decimal(transaction_amount)
+    except InvalidOperation:
+        amount = Decimal("0")
+        
+    flags = []
+    status = "APPROVED"
+    
+    # 1. Jurisdiction Risk
+    juris_lower = jurisdiction.lower()
+    if any(b in juris_lower for b in FATF_BLACKLIST):
+        flags.append(f"Jurisdiction '{jurisdiction}' is on FATF Blacklist.")
+        status = "REJECTED"
+    elif any(g in juris_lower for g in FATF_GREYLIST):
+        flags.append(f"Jurisdiction '{jurisdiction}' is on FATF Greylist (EDD Required).")
+        if status != "REJECTED": status = "EDD_REQUIRED"
+        
+    # 2. Entity Risk
+    entity_lower = entity_type.lower()
+    if any(h in entity_lower for h in HIGH_RISK_ENTITIES):
+        flags.append(f"Entity type '{entity_type}' is classified as High Risk.")
+        status = "REJECTED"
+        
+    # 3. Transaction Size Trigger (CTR)
+    if amount > CTR_THRESHOLD:
+        flags.append(f"Transaction amount ({amount}) exceeds CTR threshold ({CTR_THRESHOLD}). Enhanced Due Diligence required.")
+        if status != "REJECTED": status = "EDD_REQUIRED"
+        
+    # 4. General Policy (Legacy Blocklist for catching explicit bad words)
     proposal_lower = proposal.lower()
     for term in COMPLIANCE_BLOCKLIST:
         if term in proposal_lower:
-            return json.dumps({
-                "status": "REJECTED",
-                "reason": f"Proposal contains prohibited term: '{term}'",
-                "policy": "AML/KYC Compliance Framework v2.1",
-            })
-    return json.dumps({
-        "status": "APPROVED",
-        "reason": "No policy violations detected.",
-        "policy": "AML/KYC Compliance Framework v2.1",
-    })
+            flags.append(f"Proposal contains prohibited term: '{term}'")
+            status = "REJECTED"
+            
+    if not flags:
+        return json.dumps({
+            "status": "APPROVED",
+            "reason": "No policy violations detected.",
+            "flags": [],
+            "policy": "AML/KYC Compliance Framework v3.0",
+        })
+    else:
+        return json.dumps({
+            "status": status,
+            "reason": " | ".join(flags),
+            "flags": flags,
+            "policy": "AML/KYC Compliance Framework v3.0",
+        })
 
 
 # ── 6c. Strategic analysis ───────────────────────────────────────────────────
@@ -432,6 +531,10 @@ TOOL_IMPLEMENTATIONS: dict[str, tuple] = {
         _tamper_proof_audit_math,
         "Execute exact-precision arithmetic (add/subtract/multiply/divide) on decimal operands "
         "and return the result with a SHA-256 audit hash.",
+    ),
+    "calculate_tax_liability": (
+        _calculate_tax_liability,
+        "Execute exact-precision slab-based tax calculation using Indian Income Tax New Regime slabs.",
     ),
     "read_blackboard": (
         _read_from_blackboard,

@@ -110,7 +110,7 @@ def main() -> int:
     # Step 3 — Run orchestrator (includes Ollama LLM call)
     print("[4/4] Running Chanakya Orchestrator with Ollama intent parsing...\n")
     print("─" * 62)
-    print("  ⏳  Waiting for LLM to parse: '$25,400,500 at 12.5% tax ...'")
+    print("  ⏳  Waiting for LLM to parse: 'We have a core income ...'")
     print("─" * 62)
 
     orch_proc = subprocess.Popen(
@@ -152,10 +152,10 @@ def main() -> int:
         milestones = [
             ("LLM intent parsed",        "LLM Intent Parsing Successful"),
             ("Principal extracted",       "principal"),
-            ("Tax rate normalised",       "tax_rate"),
+            ("Reallocation percentage",   "reallocation_percentage"),
             ("Phase 1 math audit",        "CRYPTOGRAPHIC AUDIT RECORD"),
             ("Phase 1 ledger",            "IMMUTABLE LEDGER UPDATED"),
-            ("Phase 2 compliance",        "COMPLIANCE APPROVED"),
+            ("Phase 2 compliance",        "COMPLIANCE"),
             ("Phase 2 strategy",          "STRATEGIC ANALYSIS RECORD"),
             ("Phase 3 exec summary",      "EXECUTIVE SUMMARY"),
             ("Phase 3 charts",            "VISUALIZATION COMPLETE"),

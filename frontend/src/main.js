@@ -179,28 +179,30 @@ function showFinalReport(amount) {
   // Show Final Report
   finalReport.innerHTML = `
     <div class="report-header">
-      <h2>Executive Summary</h2>
+      <h2>Your Action Plan</h2>
       <div class="report-badge">Clear to Execute</div>
     </div>
+    
+    <div class="report-human-summary" style="padding: 16px; background: rgba(37, 99, 235, 0.1); border-left: 4px solid var(--accent-blue); border-radius: 4px; margin-bottom: 24px; color: #e2e8f0; font-size: 15px; line-height: 1.6;">
+      <strong>Summary:</strong> Out of your total money (₹${principal.toLocaleString()}), you will need to pay <strong>₹${tax.toLocaleString()}</strong> to the government as tax. You are safely left with <strong style="color: var(--accent-green);">₹${net.toLocaleString()}</strong> to keep or invest.
+    </div>
+
     <div class="report-grid">
       <div class="report-stat">
-        <span class="report-stat-label">Initial Capital</span>
+        <span class="report-stat-label">Total Money You Started With</span>
         <span class="report-stat-value">₹${principal.toLocaleString()}</span>
-        <span class="report-stat-sub">Jurisdiction: India</span>
       </div>
       <div class="report-stat">
-        <span class="report-stat-label">Tax Liability</span>
-        <span class="report-stat-value">₹${tax.toLocaleString()}</span>
-        <span class="report-stat-sub">Hash: a8b2...f9e4</span>
+        <span class="report-stat-label">Money Going to Government (Tax)</span>
+        <span class="report-stat-value" style="color: var(--accent-red)">₹${tax.toLocaleString()}</span>
       </div>
       <div class="report-stat">
-        <span class="report-stat-label">Net Remaining</span>
+        <span class="report-stat-label">Money Left For You</span>
         <span class="report-stat-value" style="color: var(--accent-green)">₹${net.toLocaleString()}</span>
       </div>
       <div class="report-stat">
-        <span class="report-stat-label">ESG Footprint</span>
-        <span class="report-stat-value">${(principal * 0.0000005).toFixed(2)} Tons</span>
-        <span class="report-stat-sub">Scope 3 Category 15</span>
+        <span class="report-stat-label">Impact on Environment</span>
+        <span class="report-stat-value">${(principal * 0.0000005).toFixed(2)} Tons of CO₂</span>
       </div>
     </div>
   `;

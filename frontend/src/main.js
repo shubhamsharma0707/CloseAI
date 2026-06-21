@@ -108,10 +108,22 @@ async function runOrchestration() {
   submitBtn.disabled = true;
   submitBtn.textContent = 'Executing...';
   
-  // Parse numbers from prompt if present
-  let amount = "25000000";
-  if (prompt.includes("2.5Cr") || prompt.includes("25,000,000")) amount = "25000000";
-  if (prompt.includes("$10M") || prompt.includes("10000000")) amount = "10000000";
+  // Parse numbers from prompt dynamically
+  let amount = "0";
+  // Match a number optionally followed by Cr, M, or L/Lakh
+  const match = prompt.match(/(\d+(?:\.\d+)?)\s*(Cr|M|Lakh|L)?/i);
+  if (match) {
+    let num = parseFloat(match[1]);
+    const suffix = match[2] ? match[2].toLowerCase() : "";
+    
+    if (suffix === 'cr') num *= 10000000;
+    else if (suffix === 'm') num *= 1000000;
+    else if (suffix === 'l' || suffix === 'lakh') num *= 100000;
+    
+    amount = Math.floor(num).toString();
+  }
+  
+  if (amount === "0") amount = "25000000"; // fallback
   
   renderPipeline();
 

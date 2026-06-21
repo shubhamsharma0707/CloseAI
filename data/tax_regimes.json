@@ -1,0 +1,14 @@
+{
+    "india_new_2024": {
+        "description": "India Income Tax New Regime FY 2024-25",
+        "brackets": [
+            {"limit": 300000, "rate": 0.00},
+            {"limit": 700000, "rate": 0.05},
+            {"limit": 1000000, "rate": 0.10},
+            {"limit": 1200000, "rate": 0.15},
+            {"limit": 1500000, "rate": 0.20},
+            {"limit": null, "rate": 0.30}
+        ],
+        "cess_rate": 0.04
+    }
+}

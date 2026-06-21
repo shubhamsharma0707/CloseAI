@@ -3,6 +3,8 @@ import logging
 import json
 import os
 import sys
+import uuid
+from datetime import datetime, timezone
 
 # ── Locate project root (agents/chanakya → ../../) and load .env ──────────────
 _ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -155,12 +157,33 @@ class ChanakyaOrchestrator:
             })
             await self.agent_critical.analyze_financial_strategy(context_payload)
         elif status == "EDD_REQUIRED":
+            escrow_id = str(uuid.uuid4())
+            escrow_record = {
+                "escrow_id": escrow_id,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "status": "ESCROW_LOCKED",
+                "reason": reason,
+                "proposal": proposed_action,
+                "transaction_amount": str(transaction_amount),
+                "jurisdiction": jurisdiction,
+                "entity_type": entity_type
+            }
             logger.warning(f"⚠️ EDD REQUIRED: {reason}")
-            logger.error("🛑 ESCROW LOCK INITIATED. Transaction suspended pending human L2 Forensic Review.")
+            logger.error(f"🛑 ESCROW LOCK INITIATED [ID: {escrow_id}]. Transaction suspended pending human L2 Forensic Review.")
+            
+            # Persist to append-only ledger
+            ledger_path = os.path.join(os.path.dirname(__file__), "phase_2_qualitative", "escrow_immutable_ledger.log")
+            try:
+                with open(ledger_path, "a") as f:
+                    f.write(json.dumps(escrow_record) + "\n")
+                logger.info(f"Escrow record securely appended to {ledger_path}")
+            except Exception as e:
+                logger.error(f"Failed to write to escrow ledger: {e}")
+                
             return  # HALT Pipeline
         else:
             logger.error(f"🚫 COMPLIANCE REJECTED: {reason}")
-            logger.error("🛑 TRANSACTION ABORTED.")
+            logger.error("🛑 TRANSACTION ABORTED. (No Escrow created for hard rejection)")
             return  # HALT Pipeline
 
         # PHASE 3: OUTPUT, VISUALIZATION & ESG

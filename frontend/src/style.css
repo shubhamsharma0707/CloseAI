@@ -502,3 +502,40 @@ body {
   font-size: 0.85rem;
   font-family: var(--font-mono);
 }
+
+/* Chat Response Card */
+.chat-response {
+  margin-top: 2rem;
+  background: var(--bg-surface);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 24px;
+  backdrop-filter: blur(12px);
+  animation: slideUp 0.4s ease-out forwards;
+}
+
+.chat-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.chat-icon {
+  font-size: 24px;
+}
+
+.chat-header h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: #fff;
+}
+
+.chat-content {
+  font-size: 15px;
+  line-height: 1.6;
+  color: #e2e8f0;
+  white-space: pre-wrap;
+}

@@ -6,6 +6,8 @@ const submitBtn = document.getElementById('submitBtn');
 const pipelineContainer = document.getElementById('pipelineContainer');
 const escrowList = document.getElementById('escrowList');
 const finalReport = document.getElementById('finalReport');
+const chatResponse = document.getElementById('chatResponse');
+const chatContent = document.getElementById('chatContent');
 
 // Pipeline phases definition
 const PHASES = [
@@ -237,9 +239,19 @@ async function runOrchestration() {
     amount = Math.floor(num).toString();
   }
   
+  // Detect Intent
+  const lowerPrompt = prompt.toLowerCase();
+  const isTaxOrPipeline = lowerPrompt.includes('tax') || lowerPrompt.includes('liability') || lowerPrompt.includes('reallocate') || lowerPrompt.includes('escrow') || lowerPrompt.includes('core income');
+  
+  if (!isTaxOrPipeline) {
+    return runConversationalAI(prompt);
+  }
+  
+  // Tax Pipeline execution
   if (amount === "0") amount = "25000000"; // fallback
   
   finalReport.classList.add('hidden');
+  chatResponse.classList.add('hidden');
   renderPipeline();
 
   // Phase 0
@@ -286,6 +298,32 @@ async function runOrchestration() {
   setNodeState('compliance', 'completed');
 
   await runPhase3(amount);
+}
+
+async function runConversationalAI(prompt) {
+  pipelineContainer.innerHTML = '';
+  finalReport.classList.add('hidden');
+  chatResponse.classList.remove('hidden');
+  
+  chatContent.innerHTML = '<span style="color: var(--accent-blue);">Chanakya is thinking...</span>';
+  
+  try {
+    const res = await fetch('http://127.0.0.1:8000/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prompt })
+    });
+    
+    if (!res.ok) throw new Error("Network error");
+    
+    const data = await res.json();
+    chatContent.textContent = data.response;
+  } catch (err) {
+    chatContent.innerHTML = '<span style="color: var(--accent-red);">Error connecting to local AI engine. Ensure RISHI server is running.</span>';
+  }
+  
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Execute';
 }
 
 submitBtn.addEventListener('click', runOrchestration);

@@ -440,8 +440,8 @@ body {
   animation: slideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
-.final-report.hidden {
-  display: none;
+.hidden {
+  display: none !important;
 }
 
 .report-header {

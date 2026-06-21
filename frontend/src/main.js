@@ -241,10 +241,11 @@ async function runOrchestration() {
   
   // Detect Intent
   const lowerPrompt = prompt.toLowerCase();
-  const isTaxOrPipeline = lowerPrompt.includes('tax') || lowerPrompt.includes('liability') || lowerPrompt.includes('reallocate') || lowerPrompt.includes('escrow') || lowerPrompt.includes('core income');
+  // Make intent detection much stricter so general finance questions don't falsely trigger the tax pipeline
+  const isTaxOrPipeline = lowerPrompt.includes('core income') || lowerPrompt.includes('reallocate') || lowerPrompt.includes('escrow') || lowerPrompt.startsWith('/tax');
   
   if (!isTaxOrPipeline) {
-    return runConversationalAI(prompt);
+    return runConversationalAI(prompt, false);
   }
   
   // Tax Pipeline execution
@@ -298,11 +299,16 @@ async function runOrchestration() {
   setNodeState('compliance', 'completed');
 
   await runPhase3(amount);
+  
+  // After Tax Pipeline completes, ALSO ask the AI Advisor to explain the tax results in simple English
+  await runConversationalAI(prompt, true);
 }
 
-async function runConversationalAI(prompt) {
-  pipelineContainer.innerHTML = '';
-  finalReport.classList.add('hidden');
+async function runConversationalAI(prompt, keepDashboard = false) {
+  if (!keepDashboard) {
+    pipelineContainer.innerHTML = '';
+    finalReport.classList.add('hidden');
+  }
   chatResponse.classList.remove('hidden');
   
   chatContent.innerHTML = '<span style="color: var(--accent-blue);">Chanakya is thinking...</span>';

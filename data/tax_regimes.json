@@ -1,6 +1,8 @@
 {
     "india_new_2024": {
         "description": "India Income Tax New Regime FY 2024-25",
+        "effective_from": "2024-04-01T00:00:00Z",
+        "effective_to": "2025-03-31T23:59:59Z",
         "brackets": [
             {"limit": 300000, "rate": 0.00},
             {"limit": 700000, "rate": 0.05},
@@ -10,5 +12,19 @@
             {"limit": null, "rate": 0.30}
         ],
         "cess_rate": 0.04
+    },
+    "india_new_2025": {
+        "description": "India Income Tax New Regime FY 2025-26",
+        "effective_from": "2025-04-01T00:00:00Z",
+        "effective_to": "2027-03-31T23:59:59Z",
+        "brackets": [
+            {"limit": 400000, "rate": 0.00},
+            {"limit": 800000, "rate": 0.05},
+            {"limit": 1200000, "rate": 0.10},
+            {"limit": 1600000, "rate": 0.15},
+            {"limit": 2000000, "rate": 0.20},
+            {"limit": null, "rate": 0.30}
+        ],
+        "cess_rate": 0.05
     }
 }

@@ -5,6 +5,7 @@ const promptInput = document.getElementById('promptInput');
 const submitBtn = document.getElementById('submitBtn');
 const pipelineContainer = document.getElementById('pipelineContainer');
 const escrowList = document.getElementById('escrowList');
+const finalReport = document.getElementById('finalReport');
 
 // Pipeline phases definition
 const PHASES = [
@@ -125,6 +126,7 @@ async function runOrchestration() {
   
   if (amount === "0") amount = "25000000"; // fallback
   
+  finalReport.classList.add('hidden');
   renderPipeline();
 
   // Phase 0
@@ -178,6 +180,41 @@ async function runOrchestration() {
   appendLog('reporting', 'Estimated Carbon: 12.50 metric tons.', 'log-success');
   appendLog('reporting', 'Generated Executive Summary Dashboard.');
   setNodeState('reporting', 'completed');
+  
+  // Calculate fake numbers for the dashboard
+  const principal = parseFloat(amount);
+  const tax = principal * 0.312; // ~31.2% effective
+  const net = principal - tax;
+  
+  // Show Final Report
+  finalReport.innerHTML = `
+    <div class="report-header">
+      <h2>Executive Summary</h2>
+      <div class="report-badge">Clear to Execute</div>
+    </div>
+    <div class="report-grid">
+      <div class="report-stat">
+        <span class="report-stat-label">Initial Capital</span>
+        <span class="report-stat-value">₹${principal.toLocaleString()}</span>
+        <span class="report-stat-sub">Jurisdiction: India</span>
+      </div>
+      <div class="report-stat">
+        <span class="report-stat-label">Tax Liability</span>
+        <span class="report-stat-value">₹${tax.toLocaleString()}</span>
+        <span class="report-stat-sub">Hash: a8b2...f9e4</span>
+      </div>
+      <div class="report-stat">
+        <span class="report-stat-label">Net Remaining</span>
+        <span class="report-stat-value" style="color: var(--accent-green)">₹${net.toLocaleString()}</span>
+      </div>
+      <div class="report-stat">
+        <span class="report-stat-label">ESG Footprint</span>
+        <span class="report-stat-value">${(principal * 0.0000005).toFixed(2)} Tons</span>
+        <span class="report-stat-sub">Scope 3 Category 15</span>
+      </div>
+    </div>
+  `;
+  finalReport.classList.remove('hidden');
 
   submitBtn.disabled = false;
   submitBtn.textContent = 'Execute';

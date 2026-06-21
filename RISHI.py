@@ -846,13 +846,12 @@ async def chat_endpoint(req: ChatRequest):
             if rate_match and inv_match:
                 rate = float(rate_match.group(1)) / 100.0
                 initial = float(inv_match.group(1).replace(',', ''))
+                
                 cfs = []
-                for i in range(1, 10):
-                    cf_match = re.search(rf'Year {i}:\s*₹?(-?[\d,]+)', req.prompt, re.IGNORECASE)
-                    if cf_match:
-                        cfs.append(float(cf_match.group(1).replace(',', '')))
-                    else:
-                        break
+                matches = re.finditer(r'(?:Year\s*)?([1-9])(?:[\s:]+)(?:₹\s*)?(-?[\d,]{4,})', req.prompt, re.IGNORECASE)
+                for m in matches:
+                    cf = float(m.group(2).replace(',', ''))
+                    cfs.append(cf)
                 
                 if cfs:
                     npv = -initial

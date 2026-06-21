@@ -390,20 +390,39 @@ async def _analyze_strategy(context: str) -> str:
     except json.JSONDecodeError:
         payload = {"proposal": context}
 
-    proposal = payload.get("proposal", "")
+    # If proposal itself is JSON (from orchestrator)
+    proposal_text = payload.get("proposal", "")
+    try:
+        inner_payload = json.loads(proposal_text)
+        actual_proposal = inner_payload.get("proposal", proposal_text)
+        amount_str = inner_payload.get("transaction_amount", "0")
+    except (json.JSONDecodeError, TypeError):
+        actual_proposal = proposal_text
+        amount_str = "0"
+        
+    try:
+        amount = Decimal(amount_str)
+    except InvalidOperation:
+        amount = Decimal("0")
+
     audit_ok = "Error" not in payload.get("audit_context", "Error")
     compliance_ok = payload.get("compliance_context", "") != "REJECTED"
 
+    shock_down = amount * Decimal("0.95")
+    shock_up = amount * Decimal("1.05")
+
     insights = [
-        f"Proposal scope: '{proposal[:120]}'",
+        f"Proposal scope: '{actual_proposal[:120]}'",
         "Audit chain verified." if audit_ok else "WARNING: Audit chain incomplete.",
         "Compliance gate passed." if compliance_ok else "WARNING: Compliance not cleared.",
-        "Recommend quarterly review against updated ESG benchmarks.",
+        f"Sensitivity Analysis: Base Capital = ₹{amount:,.2f}",
+        f"Sensitivity Analysis: -5% FX Shock = ₹{shock_down:,.2f}",
+        f"Sensitivity Analysis: +5% FX Shock = ₹{shock_up:,.2f}",
     ]
     risks = []
     if not audit_ok:
         risks.append("Missing cryptographic audit record — traceability gap.")
-    if "15%" in proposal or "reallocat" in proposal.lower():
+    if "15%" in actual_proposal or "reallocat" in actual_proposal.lower():
         risks.append("Budget reallocation exceeds 10% threshold — board sign-off required.")
 
     return json.dumps({
@@ -478,20 +497,45 @@ async def _calculate_esg_metrics(financial_data: str) -> str:
     except json.JSONDecodeError:
         plan = {}
 
-    action = plan.get("action", "").lower()
-    # Simplified scoring: sustainability keywords lower carbon estimate
-    sustainability_keywords = ["sustainability", "renewable", "green", "carbon", "esg"]
-    sustainability_score = sum(1 for kw in sustainability_keywords if kw in action)
+    action_str = plan.get("action", "{}")
+    try:
+        action_payload = json.loads(action_str)
+        amount_str = action_payload.get("transaction_amount", "0")
+        entity_type = action_payload.get("entity_type", "unknown").lower()
+    except (json.JSONDecodeError, TypeError):
+        amount_str = "0"
+        entity_type = "unknown"
+        
+    try:
+        amount = Decimal(amount_str)
+    except InvalidOperation:
+        amount = Decimal("0")
 
-    base_carbon = 1200.0  # metric tons CO2e (illustrative baseline)
-    estimated_carbon = round(base_carbon * max(0.5, 1.0 - sustainability_score * 0.1), 2)
-    esg_compliant = sustainability_score >= 1
+    # GHG Protocol Scope 3 Category 15: Investments
+    # Emission factor: kg CO2e per $ (or ₹) invested
+    emission_factors = {
+        "green energy": Decimal("0.05"),
+        "real estate": Decimal("0.40"),
+        "shell company": Decimal("0.80"),
+        "manufacturing": Decimal("0.60"),
+        "unknown": Decimal("0.25")
+    }
+    
+    factor = emission_factors["unknown"]
+    for key, val in emission_factors.items():
+        if key in entity_type:
+            factor = val
+            break
+
+    # Convert kg to metric tons
+    estimated_carbon = (amount * factor / Decimal("1000")).quantize(Decimal("0.01"), rounding=ROUND_HALF_EVEN)
+    esg_compliant = factor <= Decimal("0.10")
 
     return json.dumps({
         "status": "ok",
-        "estimated_carbon_tons": estimated_carbon,
+        "estimated_carbon_tons": str(estimated_carbon),
         "esg_compliance": "COMPLIANT" if esg_compliant else "REVIEW_REQUIRED",
-        "sustainability_score": sustainability_score,
+        "sustainability_score": str(factor),
         "sustainability_recommendations": [
             "Offset remaining emissions via certified carbon credits.",
             "Publish annual sustainability report (GRI Standards).",
@@ -503,19 +547,40 @@ async def _calculate_esg_metrics(financial_data: str) -> str:
 # ── 6g. Regulatory research ──────────────────────────────────────────────────
 async def _fetch_regulatory_updates(query: str) -> str:
     """
-    Returns the latest simulated regulatory updates relevant to the query.
-    In production this would call a RAG system or a curated news API.
+    Returns the latest live regulatory updates from the SEC RSS feed.
+    Falls back to mock data if the network is blocked.
     """
+    import urllib.request
+    import xml.etree.ElementTree as ET
+
+    url = "https://www.sec.gov/news/pressreleases.rss"
+    key_changes = []
+    
+    try:
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req, timeout=5.0) as response:
+            xml_data = response.read()
+        
+        root = ET.fromstring(xml_data)
+        for item in root.findall('./channel/item')[:4]:
+            title = item.find('title')
+            if title is not None:
+                key_changes.append(title.text)
+                
+    except Exception as e:
+        logger.warning(f"Live SEC RSS fetch failed ({e}). Falling back to mock data.")
+        key_changes = [
+            "[MOCK] IFRS S1/S2 mandatory sustainability disclosure effective FY2026.",
+            "[MOCK] Pillar Two global minimum tax (15%) enforcement begins Q1 2026.",
+            "[MOCK] SEC climate disclosure rules finalised — large accelerated filers first.",
+            "[MOCK] EU CSRD extended to non-EU parent companies with EU subsidiaries.",
+        ]
+
     return json.dumps({
         "status": "ok",
         "query": query,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "key_regulatory_changes": [
-            "IFRS S1/S2 mandatory sustainability disclosure effective FY2026.",
-            "Pillar Two global minimum tax (15%) enforcement begins Q1 2026.",
-            "SEC climate disclosure rules finalised — large accelerated filers first.",
-            "EU CSRD extended to non-EU parent companies with EU subsidiaries.",
-        ],
+        "key_regulatory_changes": key_changes,
         "new_risk_alerts": [
             "Increased OECD scrutiny of transfer-pricing arrangements in tech sector.",
             "Greenwashing enforcement actions rising — ensure ESG claims are auditable.",

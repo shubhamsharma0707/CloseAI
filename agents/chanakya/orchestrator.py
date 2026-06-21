@@ -203,7 +203,12 @@ class ChanakyaOrchestrator:
                     return
 
         if compliance_approved:
-            await self.agent_critical.analyze_financial_strategy(current_proposal)
+            context_payload = json.dumps({
+                "proposal": current_proposal,
+                "transaction_amount": str(transaction_amount),
+                "entity_type": entity_type
+            })
+            await self.agent_critical.analyze_financial_strategy(context_payload)
         else:
             logger.error(f"Max retries ({max_retries}) reached for compliance. Halting workflow.")
             return

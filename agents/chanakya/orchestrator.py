@@ -110,43 +110,6 @@ class ChanakyaOrchestrator:
             logger.error("Make sure Ollama is running in the background ('ollama serve') and 'llama3' is pulled.")
             return None
 
-    async def amend_proposal_with_ollama(self, original_proposal: str, rejection_reason: str) -> str | None:
-        """
-        Uses Ollama to dynamically amend a non-compliant proposal based on the rejection reason.
-        """
-        logger.info(f"🧠 Asking Chanakya (Llama3) to amend the proposal to resolve: '{rejection_reason}'")
-        
-        system_prompt = f"""
-        You are Chanakya, a financial compliance expert. 
-        A proposed action was rejected by the Ethical Compliance Agent for the following reason:
-        "{rejection_reason}"
-        
-        Original Proposal:
-        "{original_proposal}"
-        
-        Rewrite the proposed action so that it satisfies the compliance requirements while keeping the financial intent as similar as possible. 
-        Do not explain yourself or use conversational text. Reply ONLY with the rewritten proposal string.
-        """
-        
-        try:
-            from ollama import AsyncClient
-            response = await AsyncClient().chat(model='llama3', messages=[
-                {'role': 'system', 'content': system_prompt}
-            ])
-            
-            msg = response.get('message', None) if isinstance(response, dict) else None
-            if msg is not None:
-                content = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
-            else:
-                content = getattr(getattr(response, 'message', None), 'content', '')
-
-            amended_proposal = content.strip().strip('"')
-            return amended_proposal
-
-        except Exception as e:
-            logger.error(f"❌ LLM Amendment Failed: {e}")
-            return None
-
     async def run_full_financial_workflow(self, principal: str, reallocation_percentage: str, proposed_action: str, jurisdiction: str, entity_type: str):
         """
         Executes the complete end-to-end multi-agent financial workflow.
@@ -170,48 +133,35 @@ class ChanakyaOrchestrator:
             logger.error("Phase 1 Failed: Deterministic math error. Halting workflow.")
             return
 
-        # PHASE 2: QUALITATIVE & STRATEGY
+        # PHASE 2: QUALITATIVE & STRATEGY (STRICT ESCROW CONTROLS)
         logger.info("\n>>> PHASE 2: ETHICAL COMPLIANCE & STRATEGY")
         
-        max_retries = 3
-        attempt = 0
-        current_proposal = proposed_action
-        compliance_approved = False
+        compliance_result = await self.agent_ethical.evaluate_proposal(
+            proposed_action,
+            jurisdiction=jurisdiction,
+            entity_type=entity_type,
+            transaction_amount=str(transaction_amount)
+        )
         
-        while attempt < max_retries and not compliance_approved:
-            compliance_result = await self.agent_ethical.evaluate_proposal(
-                current_proposal,
-                jurisdiction=jurisdiction,
-                entity_type=entity_type,
-                transaction_amount=str(transaction_amount)
-            )
-            if compliance_result and compliance_result.get("status") in ["APPROVED", "EDD_REQUIRED"]:
-                compliance_approved = True
-                if compliance_result.get("status") == "EDD_REQUIRED":
-                    logger.warning(f"⚠️ EDD REQUIRED: {compliance_result.get('reason')}")
-            else:
-                attempt += 1
-                reason = compliance_result.get("reason", "Unknown policy violation") if compliance_result else "Unknown Error"
-                logger.warning(f"Proposal rejected: {reason}. Attempting to amend (Attempt {attempt}/{max_retries})...")
-                
-                amended_proposal = await self.amend_proposal_with_ollama(current_proposal, reason)
-                if amended_proposal:
-                    current_proposal = amended_proposal
-                    logger.info(f"Amended proposal: '{current_proposal}'")
-                else:
-                    logger.error("Failed to amend proposal. Halting workflow.")
-                    return
-
-        if compliance_approved:
+        status = compliance_result.get("status") if compliance_result else "UNKNOWN_ERROR"
+        reason = compliance_result.get("reason", "No reason provided.") if compliance_result else "Service failure."
+        
+        if status == "APPROVED":
+            logger.info("✅ Compliance Check Passed. No violations detected.")
             context_payload = json.dumps({
-                "proposal": current_proposal,
+                "proposal": proposed_action,
                 "transaction_amount": str(transaction_amount),
                 "entity_type": entity_type
             })
             await self.agent_critical.analyze_financial_strategy(context_payload)
+        elif status == "EDD_REQUIRED":
+            logger.warning(f"⚠️ EDD REQUIRED: {reason}")
+            logger.error("🛑 ESCROW LOCK INITIATED. Transaction suspended pending human L2 Forensic Review.")
+            return  # HALT Pipeline
         else:
-            logger.error(f"Max retries ({max_retries}) reached for compliance. Halting workflow.")
-            return
+            logger.error(f"🚫 COMPLIANCE REJECTED: {reason}")
+            logger.error("🛑 TRANSACTION ABORTED.")
+            return  # HALT Pipeline
 
         # PHASE 3: OUTPUT, VISUALIZATION & ESG
         logger.info("\n>>> PHASE 3: REPORTING & OUTPUT GENERATION")

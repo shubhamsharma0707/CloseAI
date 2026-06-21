@@ -81,7 +81,7 @@ function addEscrowRecord(amount) {
   const html = `
     <div class="escrow-card" id="escrow-${uuid}">
       <div class="escrow-header">
-        <div class="escrow-status">ESCROW_LOCKED</div>
+        <div class="escrow-status" id="status-${uuid}">ESCROW_LOCKED</div>
       </div>
       <div class="escrow-uuid">${uuid}</div>
       <div class="escrow-reason">
@@ -91,7 +91,7 @@ function addEscrowRecord(amount) {
         <span>Trigger: AML_CTR_01</span>
         <span>Timestamp: ${new Date().toISOString()}</span>
       </div>
-      <button class="btn-review">Unlock (L2 Forensic)</button>
+      <button class="btn-review" id="btn-${uuid}" onclick="window.unlockEscrow('${uuid}', '${amount}')">Unlock (L2 Forensic)</button>
     </div>
   `;
   
@@ -99,6 +99,114 @@ function addEscrowRecord(amount) {
     escrowList.innerHTML = '';
   }
   escrowList.insertAdjacentHTML('afterbegin', html);
+}
+
+// Global function to unlock and resume
+window.unlockEscrow = async function(uuid, amount) {
+  const btn = document.getElementById(`btn-${uuid}`);
+  const status = document.getElementById(`status-${uuid}`);
+  const card = document.getElementById(`escrow-${uuid}`);
+  
+  if (!btn) return;
+  
+  btn.disabled = true;
+  btn.textContent = 'Unlocked ✓';
+  btn.style.borderColor = 'var(--accent-green)';
+  btn.style.color = 'var(--accent-green)';
+  status.textContent = 'RESOLVED';
+  status.style.color = 'var(--accent-green)';
+  status.style.background = 'rgba(16, 185, 129, 0.1)';
+  card.style.borderColor = 'var(--accent-green)';
+  card.style.boxShadow = 'inset 4px 0 0 var(--accent-green)';
+  
+  appendLog('compliance', 'L2 Forensic Override Accepted.', 'log-success');
+  setNodeState('compliance', 'completed');
+  
+  // Resume Phase 3
+  await runPhase3(amount);
+};
+
+async function runPhase3(amount) {
+  // Phase 3
+  setNodeState('reporting', 'active');
+  await wait(800);
+  appendLog('reporting', 'Calculating GHG Protocol Scope 3 Carbon Footprint...');
+  await wait(600);
+  appendLog('reporting', 'Estimated Carbon: 12.50 metric tons.', 'log-success');
+  appendLog('reporting', 'Generated Executive Summary Dashboard.');
+  setNodeState('reporting', 'completed');
+  
+  showFinalReport(amount);
+}
+
+function showFinalReport(amount) {
+  // Calculate accurate CA-grade tax (India New Regime 2025 equivalent)
+  const principal = parseFloat(amount);
+  
+  let baseTax = 0;
+  const brackets = [
+      {limit: 400000, rate: 0.00},
+      {limit: 800000, rate: 0.05},
+      {limit: 1200000, rate: 0.10},
+      {limit: 1600000, rate: 0.15},
+      {limit: 2000000, rate: 0.20},
+      {limit: Infinity, rate: 0.30}
+  ];
+  
+  let previousLimit = 0;
+  for (let b of brackets) {
+      if (principal > previousLimit) {
+          let taxable = Math.min(principal - previousLimit, b.limit - previousLimit);
+          baseTax += taxable * b.rate;
+          previousLimit = b.limit;
+      } else {
+          break;
+      }
+  }
+  
+  let surchargeRate = 0;
+  if (principal > 20000000) surchargeRate = 0.25;
+  else if (principal > 10000000) surchargeRate = 0.15;
+  else if (principal > 5000000) surchargeRate = 0.10;
+  
+  const surcharge = baseTax * surchargeRate;
+  const cess = (baseTax + surcharge) * 0.04;
+  
+  const tax = baseTax + surcharge + cess;
+  const net = principal - tax;
+  
+  // Show Final Report
+  finalReport.innerHTML = `
+    <div class="report-header">
+      <h2>Executive Summary</h2>
+      <div class="report-badge">Clear to Execute</div>
+    </div>
+    <div class="report-grid">
+      <div class="report-stat">
+        <span class="report-stat-label">Initial Capital</span>
+        <span class="report-stat-value">₹${principal.toLocaleString()}</span>
+        <span class="report-stat-sub">Jurisdiction: India</span>
+      </div>
+      <div class="report-stat">
+        <span class="report-stat-label">Tax Liability</span>
+        <span class="report-stat-value">₹${tax.toLocaleString()}</span>
+        <span class="report-stat-sub">Hash: a8b2...f9e4</span>
+      </div>
+      <div class="report-stat">
+        <span class="report-stat-label">Net Remaining</span>
+        <span class="report-stat-value" style="color: var(--accent-green)">₹${net.toLocaleString()}</span>
+      </div>
+      <div class="report-stat">
+        <span class="report-stat-label">ESG Footprint</span>
+        <span class="report-stat-value">${(principal * 0.0000005).toFixed(2)} Tons</span>
+        <span class="report-stat-sub">Scope 3 Category 15</span>
+      </div>
+    </div>
+  `;
+  finalReport.classList.remove('hidden');
+
+  submitBtn.disabled = false;
+  submitBtn.textContent = 'Execute';
 }
 
 // Orchestrator Simulation
@@ -174,82 +282,7 @@ async function runOrchestration() {
   appendLog('compliance', 'Compliance checks passed. No violations.', 'log-success');
   setNodeState('compliance', 'completed');
 
-  // Phase 3
-  setNodeState('reporting', 'active');
-  await wait(800);
-  appendLog('reporting', 'Calculating GHG Protocol Scope 3 Carbon Footprint...');
-  await wait(600);
-  appendLog('reporting', 'Estimated Carbon: 12.50 metric tons.', 'log-success');
-  appendLog('reporting', 'Generated Executive Summary Dashboard.');
-  setNodeState('reporting', 'completed');
-  
-  // Calculate accurate CA-grade tax (India New Regime 2024 equivalent)
-  const principal = parseFloat(amount);
-  
-  let baseTax = 0;
-  const brackets = [
-      {limit: 400000, rate: 0.00},
-      {limit: 800000, rate: 0.05},
-      {limit: 1200000, rate: 0.10},
-      {limit: 1600000, rate: 0.15},
-      {limit: 2000000, rate: 0.20},
-      {limit: Infinity, rate: 0.30}
-  ];
-  
-  let previousLimit = 0;
-  for (let b of brackets) {
-      if (principal > previousLimit) {
-          let taxable = Math.min(principal - previousLimit, b.limit - previousLimit);
-          baseTax += taxable * b.rate;
-          previousLimit = b.limit;
-      } else {
-          break;
-      }
-  }
-  
-  let surchargeRate = 0;
-  if (principal > 20000000) surchargeRate = 0.25;
-  else if (principal > 10000000) surchargeRate = 0.15;
-  else if (principal > 5000000) surchargeRate = 0.10;
-  
-  const surcharge = baseTax * surchargeRate;
-  const cess = (baseTax + surcharge) * 0.04;
-  
-  const tax = baseTax + surcharge + cess;
-  const net = principal - tax;
-  
-  // Show Final Report
-  finalReport.innerHTML = `
-    <div class="report-header">
-      <h2>Executive Summary</h2>
-      <div class="report-badge">Clear to Execute</div>
-    </div>
-    <div class="report-grid">
-      <div class="report-stat">
-        <span class="report-stat-label">Initial Capital</span>
-        <span class="report-stat-value">₹${principal.toLocaleString()}</span>
-        <span class="report-stat-sub">Jurisdiction: India</span>
-      </div>
-      <div class="report-stat">
-        <span class="report-stat-label">Tax Liability</span>
-        <span class="report-stat-value">₹${tax.toLocaleString()}</span>
-        <span class="report-stat-sub">Hash: a8b2...f9e4</span>
-      </div>
-      <div class="report-stat">
-        <span class="report-stat-label">Net Remaining</span>
-        <span class="report-stat-value" style="color: var(--accent-green)">₹${net.toLocaleString()}</span>
-      </div>
-      <div class="report-stat">
-        <span class="report-stat-label">ESG Footprint</span>
-        <span class="report-stat-value">${(principal * 0.0000005).toFixed(2)} Tons</span>
-        <span class="report-stat-sub">Scope 3 Category 15</span>
-      </div>
-    </div>
-  `;
-  finalReport.classList.remove('hidden');
-
-  submitBtn.disabled = false;
-  submitBtn.textContent = 'Execute';
+  await runPhase3(amount);
 }
 
 submitBtn.addEventListener('click', runOrchestration);

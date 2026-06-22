@@ -82,6 +82,30 @@ def calculate_operating_cash_flow(net_profit: float, depreciation: float,
         f"Do not invent your own accounting rules. Present the final Cash Flow as exactly ₹{ocf:,.2f}."
     )
 
+def calculate_deferred_tax_liability(machine_cost: float, acc_years: int, tax_wdv_rate: float, tax_rate: float) -> str:
+    """
+    Calculates Deferred Tax Liability at the end of Year 1.
+    """
+    acc_dep = machine_cost / acc_years
+    tax_dep = machine_cost * tax_wdv_rate
+    temp_diff = tax_dep - acc_dep
+    dtl = temp_diff * tax_rate
+    
+    return (
+        f"\\n\\n[EXPERT SCRATCHPAD - STRICT MATHEMATICAL CONTEXT]\\n"
+        f"Step 1: Calculate Accounting Depreciation.\\n"
+        f"        Cost (₹{machine_cost:,.2f}) / {acc_years} years = ₹{acc_dep:,.2f}.\\n"
+        f"Step 2: Calculate Tax Depreciation (WDV).\\n"
+        f"        Cost (₹{machine_cost:,.2f}) * {tax_wdv_rate*100:.0f}% = ₹{tax_dep:,.2f}.\\n"
+        f"Step 3: Calculate Temporary Difference.\\n"
+        f"        Tax Depreciation (₹{tax_dep:,.2f}) - Accounting Depreciation (₹{acc_dep:,.2f}) = ₹{temp_diff:,.2f}.\\n"
+        f"Step 4: Calculate Deferred Tax Liability.\\n"
+        f"        Temporary Difference (₹{temp_diff:,.2f}) * Tax Rate ({tax_rate*100:.0f}%) = ₹{dtl:,.2f}.\\n"
+        f"Final Deferred Tax Liability Calculation: ₹{dtl:,.2f}\\n\\n"
+        f"Instructions: Use this scratchpad to explain the math step-by-step to the user conversationally. "
+        f"Do not invent your own accounting rules. Present the final Deferred Tax Liability as exactly ₹{dtl:,.2f}."
+    )
+
 def route_and_solve(prompt: str) -> str:
     """
     Examines the prompt, detects the quantitative finance intent, 
@@ -165,5 +189,23 @@ def route_and_solve(prompt: str) -> str:
                 return calculate_operating_cash_flow(profit, dep, inv, rec, pay)
         except Exception as e:
             logger.error(f"Cash Flow parsing error: {e}")
+
+    # 4. Deferred Tax Liability Routing
+    if "DEFERRED TAX LIABILITY" in prompt_upper and "COSTING" in prompt_upper:
+        try:
+            cost_m = re.search(r'costing.*?(?:₹|Rs\.?)?\s*([\d,]+(?:.\d+)?)', prompt, re.IGNORECASE)
+            years_m = re.search(r'(\d+)\s*years for accounting', prompt, re.IGNORECASE)
+            wdv_m = re.search(r'(\d+(?:\.\d+)?)\s*%\s*WDV', prompt, re.IGNORECASE)
+            tax_m = re.search(r'Tax rate\s*=\s*(\d+(?:\.\d+)?)\s*%', prompt, re.IGNORECASE)
+            
+            if cost_m and years_m and wdv_m and tax_m:
+                cost = float(cost_m.group(1).replace(',', ''))
+                years = int(years_m.group(1))
+                wdv_rate = float(wdv_m.group(1)) / 100.0
+                tax_rate = float(tax_m.group(1)) / 100.0
+                
+                return calculate_deferred_tax_liability(cost, years, wdv_rate, tax_rate)
+        except Exception as e:
+            logger.error(f"DTL parsing error: {e}")
 
     return ""

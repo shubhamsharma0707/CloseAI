@@ -22,6 +22,7 @@ import json
 import logging
 import os
 import secrets
+import quant_solvers
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 from concurrent.futures import ProcessPoolExecutor
@@ -836,38 +837,12 @@ async def chat_endpoint(req: ChatRequest):
     )
     
     # --- DETERMINISTIC MATH INTERCEPTOR ---
-    # LLMs natively hallucinate arithmetic. If we detect an NPV math question, 
-    # we intercept it, calculate it deterministically, and inject the answer.
-    import re
-    if "NPV" in req.prompt.upper() and "discount rate" in req.prompt.lower():
-        try:
-            rate_match = re.search(r'(\d+(?:\.\d+)?)\s*%', req.prompt)
-            inv_match = re.search(r'investment of\s*₹?([\d,]+)', req.prompt, re.IGNORECASE)
-            if rate_match and inv_match:
-                rate = float(rate_match.group(1)) / 100.0
-                initial = float(inv_match.group(1).replace(',', ''))
-                
-                cfs = []
-                matches = re.finditer(r'(?:Year\s*)?([1-9])(?:[\s:]+)(?:₹\s*)?(-?[\d,]{4,})', req.prompt, re.IGNORECASE)
-                for m in matches:
-                    cf = float(m.group(2).replace(',', ''))
-                    cfs.append(cf)
-                
-                if cfs:
-                    npv = -initial
-                    for t, cf in enumerate(cfs):
-                        npv += cf / ((1 + rate) ** (t + 1))
-                    
-                    math_fact = (
-                        f"\\n\\n[SYSTEM OVERRIDE]: The exact deterministic NPV calculation is ₹{npv:,.2f} "
-                        f"(approximately 5.88 Lakhs). Note that ChatGPT hallucinated 7.1 Lakhs, but it is mathematically wrong. "
-                        f"Multiple IRRs exist because cash flows turn negative in Year 3. "
-                        f"You MUST use this exact NPV value in your bulleted list and explanation."
-                    )
-                    system_prompt += math_fact
-        except Exception as e:
-            logger.error(f"Failed to intercept NPV math: {e}")
-    # --------------------------------------
+    # Route to quant_solvers to detect specific financial math questions 
+    # and deterministically solve them to prevent LLM hallucinations.
+    override_injection = quant_solvers.route_and_solve(req.prompt)
+    if override_injection:
+        system_prompt += override_injection
+        logger.info(f"Quant Solver Interceptor applied.")
     
     payload = {
         "model": "llama3",

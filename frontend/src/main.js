@@ -317,13 +317,42 @@ async function runConversationalAI(prompt, keepDashboard = false) {
     const res = await fetch('http://127.0.0.1:8000/chat', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt })
+      body: JSON.stringify({ prompt, stream: true })
     });
     
     if (!res.ok) throw new Error("Network error");
     
-    const data = await res.json();
-    chatContent.textContent = data.response;
+    chatContent.textContent = ''; // clear thinking state
+    
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder("utf-8");
+    let done = false;
+    
+    while (!done) {
+      const { value, done: readerDone } = await reader.read();
+      done = readerDone;
+      if (value) {
+        const chunkStr = decoder.decode(value, { stream: true });
+        const lines = chunkStr.split('\\n');
+        for (let line of lines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.replace('data: ', '').trim();
+            if (dataStr) {
+              try {
+                const data = JSON.parse(dataStr);
+                if (data.chunk) {
+                  chatContent.textContent += data.chunk;
+                } else if (data.error) {
+                  chatContent.textContent += `\\n[Error: ${data.error}]`;
+                }
+              } catch (e) {
+                // Ignore parse errors from partial JSON
+              }
+            }
+          }
+        }
+      }
+    }
   } catch (err) {
     chatContent.innerHTML = '<span style="color: var(--accent-red);">Error connecting to local AI engine. Ensure RISHI server is running.</span>';
   }

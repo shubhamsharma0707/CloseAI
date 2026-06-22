@@ -822,6 +822,7 @@ def health_check():
 
 class ChatRequest(BaseModel):
     prompt: str
+    stream: bool = False
 
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
@@ -830,10 +831,11 @@ async def chat_endpoint(req: ChatRequest):
     injecting a strict System Prompt to ensure simple English responses.
     """
     system_prompt = (
-        "You are Chanakya, a friendly and highly knowledgeable financial advisor. "
-        "CRITICAL INSTRUCTIONS: "
-        "1. FINAL ANSWERS FIRST: Always start your response with a clear, bulleted list of the final mathematical answers to the specific questions asked. "
-        "2. EXTREMELY SIMPLE EXPLANATION: After the bulleted answers, explain the reasoning in incredibly simple, plain English. Speak as if explaining to someone with zero financial education. Use simple, everyday analogies. Avoid all jargon."
+        "You are Chanakya, a charismatic, world-class financial expert and mentor. "
+        "You do NOT act like a robotic calculator. You think out loud, explain the 'why' behind the numbers, and walk the user through the math step-by-step like an expert mentor. "
+        "Be conversational, dynamic, and 'alive'. Speak simply but with authority. "
+        "If you are provided with an [EXPERT SCRATCHPAD] below, you MUST use its step-by-step logic and its exact final answer. "
+        "Do NOT invent your own math or accounting rules if a scratchpad is provided; instead, elegantly incorporate its steps into your natural explanation."
     )
     
     # --- DETERMINISTIC MATH INTERCEPTOR ---
@@ -850,18 +852,39 @@ async def chat_endpoint(req: ChatRequest):
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": req.prompt}
         ],
-        "stream": False
+        "stream": req.stream
     }
     
-    try:
-        async with httpx.AsyncClient() as client:
-            resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=60.0)
-            resp.raise_for_status()
-            data = resp.json()
-            return {"response": data.get("message", {}).get("content", "I am unable to formulate an answer.")}
-    except Exception as e:
-        logger.error(f"Error calling Ollama: {e}")
-        return {"response": "I'm sorry, I'm having trouble thinking right now. Please try again later."}
+    if req.stream:
+        import json
+        async def stream_ollama():
+            try:
+                async with httpx.AsyncClient() as client:
+                    async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload, timeout=60.0) as resp:
+                        resp.raise_for_status()
+                        async for chunk in resp.aiter_lines():
+                            if chunk:
+                                try:
+                                    data = json.loads(chunk)
+                                    if "message" in data and "content" in data["message"]:
+                                        # Yield as Server-Sent Events (SSE) format
+                                        yield f"data: {json.dumps({'chunk': data['message']['content']})}\\n\\n"
+                                except json.JSONDecodeError:
+                                    pass
+            except Exception as e:
+                logger.error(f"Error streaming from Ollama: {e}")
+                yield f"data: {json.dumps({'error': 'Connection error'})}\\n\\n"
+        return StreamingResponse(stream_ollama(), media_type="text/event-stream")
+    else:
+        try:
+            async with httpx.AsyncClient() as client:
+                resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=60.0)
+                resp.raise_for_status()
+                data = resp.json()
+                return {"response": data.get("message", {}).get("content", "I am unable to formulate an answer.")}
+        except Exception as e:
+            logger.error(f"Error calling Ollama: {e}")
+            return {"response": "I'm sorry, I'm having trouble thinking right now. Please try again later."}
 
 
 if __name__ == "__main__":

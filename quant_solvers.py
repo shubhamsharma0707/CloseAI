@@ -12,8 +12,13 @@ def calculate_npv(initial_investment: float, cash_flows: list[float], discount_r
         npv += cf / ((1 + discount_rate) ** (t + 1))
     
     return (
-        f"\\n\\n[SYSTEM OVERRIDE]: The exact deterministic NPV calculation is ₹{npv:,.2f}. "
-        f"You MUST use this exact NPV value in your bulleted list and explanation."
+        f"\\n\\n[EXPERT SCRATCHPAD - STRICT MATHEMATICAL CONTEXT]\\n"
+        f"Step 1: Identify initial investment = ₹{initial_investment:,.2f}.\\n"
+        f"Step 2: Calculate present value of each cash flow using formula CF / (1 + {discount_rate})^t.\\n"
+        f"Step 3: Sum the present values and subtract the initial investment.\\n"
+        f"Final NPV Calculation: ₹{npv:,.2f}\\n\\n"
+        f"Instructions: Use this scratchpad to explain the math step-by-step to the user. "
+        f"Do not invent your own math. Present the final NPV as exactly ₹{npv:,.2f}."
     )
 
 def calculate_diluted_eps(net_income: float, existing_shares: float, bonds_value: float, 
@@ -35,11 +40,20 @@ def calculate_diluted_eps(net_income: float, existing_shares: float, bonds_value
     diluted_eps = adjusted_earnings / total_shares
     
     return (
-        f"\\n\\n[SYSTEM OVERRIDE]: The exact deterministic Diluted EPS calculation is ₹{diluted_eps:,.2f}. "
-        f"The formula is (Adjusted Earnings) / (Total Shares). "
-        f"Adjusted Earnings = {net_income} + ({bonds_value} * {bond_interest_rate} * (1 - {tax_rate})) = {adjusted_earnings:,.2f}. "
-        f"Total Shares = {existing_shares} + ({bonds_value} / {conv_bond_face_value} * {conv_shares}) = {total_shares:,.2f}. "
-        f"You MUST use this exact Diluted EPS value (₹{diluted_eps:,.2f}) in your bulleted list."
+        f"\\n\\n[EXPERT SCRATCHPAD - STRICT MATHEMATICAL CONTEXT]\\n"
+        f"Step 1: Calculate Interest Saved After Tax.\\n"
+        f"        Bonds ({bonds_value}) * Interest Rate ({bond_interest_rate}) * (1 - Tax Rate {tax_rate}) = {interest_saved:,.2f}.\\n"
+        f"Step 2: Calculate Adjusted Earnings.\\n"
+        f"        Net Income ({net_income}) + Interest Saved ({interest_saved:,.2f}) = {adjusted_earnings:,.2f}.\\n"
+        f"Step 3: Calculate New Shares from Bonds.\\n"
+        f"        (Bonds {bonds_value} / Face Value {conv_bond_face_value}) * Conversion Ratio {conv_shares} = {new_shares:,.2f} new shares.\\n"
+        f"Step 4: Calculate Total Shares.\\n"
+        f"        Existing Shares ({existing_shares}) + New Shares ({new_shares:,.2f}) = {total_shares:,.2f}.\\n"
+        f"Step 5: Calculate Diluted EPS.\\n"
+        f"        Adjusted Earnings ({adjusted_earnings:,.2f}) / Total Shares ({total_shares:,.2f}) = {diluted_eps:,.2f}.\\n"
+        f"Final Diluted EPS Calculation: ₹{diluted_eps:,.2f}\\n\\n"
+        f"Instructions: Use this scratchpad to explain the math step-by-step to the user conversationally. "
+        f"Do not invent your own math. Present the final EPS as exactly ₹{diluted_eps:,.2f}."
     )
 
 def calculate_operating_cash_flow(net_profit: float, depreciation: float, 
@@ -54,11 +68,18 @@ def calculate_operating_cash_flow(net_profit: float, depreciation: float,
     ocf = net_profit + depreciation - inc_inventory - inc_receivables + inc_payables
     
     return (
-        f"\\n\\n[SYSTEM OVERRIDE]: The exact deterministic Cash Flow from Operations is ₹{ocf:,.2f}. "
-        f"The accounting rule is: Net Profit ({net_profit}) + Depreciation ({depreciation}) "
-        f"- Increase in Inventory ({inc_inventory}) - Increase in Receivables ({inc_receivables}) "
-        f"+ Increase in Payables ({inc_payables}). "
-        f"You MUST use this exact Cash Flow value (₹{ocf:,.2f}) in your bulleted list."
+        f"\\n\\n[EXPERT SCRATCHPAD - STRICT MATHEMATICAL CONTEXT]\\n"
+        f"Step 1: Start with Net Profit = {net_profit}.\\n"
+        f"Step 2: Add back non-cash expenses like Depreciation (+{depreciation}).\\n"
+        f"Step 3: Adjust for working capital changes.\\n"
+        f"        - Increase in Inventory is cash tied up, so subtract it (-{inc_inventory}).\\n"
+        f"        - Increase in Receivables is cash not yet received, so subtract it (-{inc_receivables}).\\n"
+        f"        - Increase in Payables is cash retained, so add it (+{inc_payables}).\\n"
+        f"Step 4: Calculate total Operating Cash Flow.\\n"
+        f"        {net_profit} + {depreciation} - {inc_inventory} - {inc_receivables} + {inc_payables} = {ocf:,.2f}.\\n"
+        f"Final Cash Flow Calculation: ₹{ocf:,.2f}\\n\\n"
+        f"Instructions: Use this scratchpad to explain the math step-by-step to the user conversationally. "
+        f"Do not invent your own accounting rules. Present the final Cash Flow as exactly ₹{ocf:,.2f}."
     )
 
 def route_and_solve(prompt: str) -> str:

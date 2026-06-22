@@ -21,6 +21,11 @@ import hmac
 import json
 import logging
 import os
+import re
+import subprocess
+import tempfile
+import logging
+import os
 import secrets
 import quant_solvers
 from datetime import datetime, timezone
@@ -828,61 +833,123 @@ class ChatRequest(BaseModel):
 @app.post("/chat")
 async def chat_endpoint(req: ChatRequest):
     """
-    Proxies a conversational prompt to the local Ollama instance,
-    injecting a strict System Prompt to ensure simple English responses.
+    Proxies a conversational prompt to the local Ollama instance.
+    Includes a Code Interpreter loop to detect and execute python scripts.
     """
     system_prompt = (
         "You are Chanakya, a charismatic, world-class financial expert and mentor. "
         "You do NOT act like a robotic calculator. You think out loud, explain the 'why' behind the numbers, and walk the user through the math step-by-step like an expert mentor. "
         "Be conversational, dynamic, and 'alive'. Speak simply but with authority. "
         "If you are provided with an [EXPERT SCRATCHPAD] below, you MUST use its step-by-step logic and its exact final answer. "
-        "Do NOT invent your own math or accounting rules if a scratchpad is provided; instead, elegantly incorporate its steps into your natural explanation."
+        "Do NOT invent your own math or accounting rules if a scratchpad is provided; instead, elegantly incorporate its steps into your natural explanation.\\n\\n"
+        "CODE INTERPRETER CAPABILITY:\\n"
+        "If you are asked a complex math or logic question that is NOT covered by an [EXPERT SCRATCHPAD], you MUST write a Python script to calculate the exact answer. "
+        "Output the script inside ```python ... ``` blocks. Use the print() function to output the final results. "
+        "Do NOT attempt to guess the math. Write the Python code, print the result, and stop. The system will run the code and give you the output to generate your final answer."
     )
     
     # --- DETERMINISTIC MATH INTERCEPTOR ---
-    # Route to quant_solvers to detect specific financial math questions 
-    # and deterministically solve them to prevent LLM hallucinations.
     override_injection = quant_solvers.route_and_solve(req.prompt)
     if override_injection:
         system_prompt += override_injection
         logger.info(f"Quant Solver Interceptor applied.")
     
-    payload = {
-        "model": "llama3",
-        "messages": [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": req.prompt}
-        ],
-        "stream": req.stream
-    }
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": req.prompt}
+    ]
     
     if req.stream:
-        import json
         async def stream_ollama():
             try:
-                async with httpx.AsyncClient() as client:
-                    async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload, timeout=60.0) as resp:
-                        resp.raise_for_status()
-                        async for chunk in resp.aiter_lines():
-                            if chunk:
-                                try:
-                                    data = json.loads(chunk)
-                                    if "message" in data and "content" in data["message"]:
-                                        # Yield as Server-Sent Events (SSE) format
-                                        yield f"data: {json.dumps({'chunk': data['message']['content']})}\\n\\n"
-                                except json.JSONDecodeError:
-                                    pass
+                # FIRST PASS: Non-streaming to let it think and write code
+                async with httpx.AsyncClient(timeout=120.0) as client:
+                    payload = {"model": "llama3", "messages": messages, "stream": False}
+                    resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
+                    resp.raise_for_status()
+                    data = resp.json()
+                    first_response = data.get("message", {}).get("content", "")
+                    
+                    # Check for python code
+                    code_match = re.search(r'```python\\s*(.*?)\\s*```', first_response, re.DOTALL)
+                    if code_match:
+                        logger.info("Code Interpreter triggered!")
+                        code = code_match.group(1)
+                        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+                            f.write(code)
+                            temp_path = f.name
+                        
+                        try:
+                            proc = subprocess.run(["python3", temp_path], capture_output=True, text=True, timeout=10)
+                            output = proc.stdout if proc.returncode == 0 else f"Error:\\n{proc.stderr}"
+                            logger.info(f"Code executed. Output: {output.strip()}")
+                        except Exception as e:
+                            output = f"Execution failed: {str(e)}"
+                            logger.error(output)
+                        finally:
+                            os.unlink(temp_path)
+                            
+                        # SECOND PASS (Streaming) with the result
+                        messages.append({"role": "assistant", "content": first_response})
+                        messages.append({"role": "user", "content": f"Here is the output of your script:\\n{output}\\nNow provide the final conversational answer. Do NOT output any more python code."})
+                        
+                        payload = {"model": "llama3", "messages": messages, "stream": True}
+                        async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload) as stream_resp:
+                            stream_resp.raise_for_status()
+                            async for chunk in stream_resp.aiter_lines():
+                                if chunk:
+                                    try:
+                                        cdata = json.loads(chunk)
+                                        if "message" in cdata and "content" in cdata["message"]:
+                                            yield f"data: {json.dumps({'chunk': cdata['message']['content']})}\\n\\n"
+                                    except:
+                                        pass
+                    else:
+                        # No code generated. Artificially stream the response for UX.
+                        words = first_response.split(' ')
+                        for i, w in enumerate(words):
+                            space = " " if i < len(words) - 1 else ""
+                            yield f"data: {json.dumps({'chunk': w + space})}\\n\\n"
+                            await asyncio.sleep(0.01)
+
             except Exception as e:
                 logger.error(f"Error streaming from Ollama: {e}")
                 yield f"data: {json.dumps({'error': 'Connection error'})}\\n\\n"
+        
         return StreamingResponse(stream_ollama(), media_type="text/event-stream")
     else:
+        # For non-streaming requests (tests)
         try:
-            async with httpx.AsyncClient() as client:
-                resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload, timeout=60.0)
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                payload = {"model": "llama3", "messages": messages, "stream": False}
+                resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
-                return {"response": data.get("message", {}).get("content", "I am unable to formulate an answer.")}
+                first_response = data.get("message", {}).get("content", "")
+                
+                code_match = re.search(r'```python\\s*(.*?)\\s*```', first_response, re.DOTALL)
+                if code_match:
+                    code = code_match.group(1)
+                    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
+                        f.write(code)
+                        temp_path = f.name
+                    try:
+                        proc = subprocess.run(["python3", temp_path], capture_output=True, text=True, timeout=10)
+                        output = proc.stdout if proc.returncode == 0 else f"Error:\\n{proc.stderr}"
+                    except Exception as e:
+                        output = f"Execution failed: {str(e)}"
+                    finally:
+                        os.unlink(temp_path)
+                        
+                    messages.append({"role": "assistant", "content": first_response})
+                    messages.append({"role": "user", "content": f"Here is the output of your script:\\n{output}\\nNow provide the final conversational answer. Do NOT output any more python code."})
+                    payload = {"model": "llama3", "messages": messages, "stream": False}
+                    resp2 = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
+                    resp2.raise_for_status()
+                    data2 = resp2.json()
+                    return {"response": data2.get("message", {}).get("content", "")}
+                else:
+                    return {"response": first_response}
         except Exception as e:
             logger.error(f"Error calling Ollama: {e}")
             return {"response": "I'm sorry, I'm having trouble thinking right now. Please try again later."}

@@ -106,6 +106,49 @@ def calculate_deferred_tax_liability(machine_cost: float, acc_years: int, tax_wd
         f"Do not invent your own accounting rules. Present the final Deferred Tax Liability as exactly ₹{dtl:,.2f}."
     )
 
+def calculate_macaulay_duration(face_value: float, coupon_rate: float, maturity: int, yield_rate: float) -> str:
+    """
+    Calculates the Macaulay duration of a bond.
+    """
+    coupon_payment = face_value * coupon_rate
+    present_values = []
+    weighted_pvs = []
+    
+    scratchpad_steps = f"Step 1: Identify bond parameters.\\n"
+    scratchpad_steps += f"        Face Value: ₹{face_value:,.2f}, Coupon: {coupon_payment:,.2f}, Maturity: {maturity} years, Yield: {yield_rate*100:.0f}%.\\n"
+    scratchpad_steps += f"Step 2: Calculate Present Value (PV) of each cash flow.\\n"
+    
+    total_pv = 0.0
+    total_weighted_pv = 0.0
+    
+    for t in range(1, maturity + 1):
+        cf = coupon_payment if t < maturity else (coupon_payment + face_value)
+        pv = cf / ((1 + yield_rate) ** t)
+        weighted_pv = t * pv
+        
+        present_values.append(pv)
+        weighted_pvs.append(weighted_pv)
+        
+        total_pv += pv
+        total_weighted_pv += weighted_pv
+        
+        scratchpad_steps += f"        Year {t}: CF = {cf:,.2f}, PV = {pv:,.2f}, Weighted PV (t*PV) = {weighted_pv:,.2f}\\n"
+        
+    macaulay_duration = total_weighted_pv / total_pv
+    
+    scratchpad_steps += f"Step 3: Calculate Total Bond Price (Sum of PVs).\\n"
+    scratchpad_steps += f"        Total PV = {total_pv:,.2f}\\n"
+    scratchpad_steps += f"Step 4: Calculate Macaulay Duration (Sum of Weighted PVs / Total PV).\\n"
+    scratchpad_steps += f"        {total_weighted_pv:,.2f} / {total_pv:,.2f} = {macaulay_duration:,.2f} years.\\n"
+    
+    return (
+        f"\\n\\n[EXPERT SCRATCHPAD - STRICT MATHEMATICAL CONTEXT]\\n"
+        f"{scratchpad_steps}"
+        f"Final Macaulay Duration Calculation: {macaulay_duration:,.2f} years\\n\\n"
+        f"Instructions: Use this scratchpad to explain the math step-by-step to the user conversationally. "
+        f"Do not invent your own formulas. Present the final Macaulay Duration as exactly {macaulay_duration:,.2f} years."
+    )
+
 def route_and_solve(prompt: str) -> str:
     """
     Examines the prompt, detects the quantitative finance intent, 
@@ -207,5 +250,23 @@ def route_and_solve(prompt: str) -> str:
                 return calculate_deferred_tax_liability(cost, years, wdv_rate, tax_rate)
         except Exception as e:
             logger.error(f"DTL parsing error: {e}")
+
+    # 5. Macaulay Duration Routing
+    if "MACAULAY DURATION" in prompt_upper and "COUPON" in prompt_upper:
+        try:
+            face_m = re.search(r'Face value.*?(?:₹|Rs\.?)?\s*([\d,]+(?:.\d+)?)', prompt, re.IGNORECASE)
+            coupon_m = re.search(r'Coupon.*?\s*(\d+(?:\.\d+)?)\s*%', prompt, re.IGNORECASE)
+            maturity_m = re.search(r'Maturity.*?\s*(\d+)\s*years', prompt, re.IGNORECASE)
+            yield_m = re.search(r'Yield.*?\s*(\d+(?:\.\d+)?)\s*%', prompt, re.IGNORECASE)
+            
+            if face_m and coupon_m and maturity_m and yield_m:
+                face = float(face_m.group(1).replace(',', ''))
+                coupon = float(coupon_m.group(1)) / 100.0
+                maturity = int(maturity_m.group(1))
+                yield_r = float(yield_m.group(1)) / 100.0
+                
+                return calculate_macaulay_duration(face, coupon, maturity, yield_r)
+        except Exception as e:
+            logger.error(f"Macaulay duration parsing error: {e}")
 
     return ""

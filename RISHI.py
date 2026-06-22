@@ -850,12 +850,24 @@ async def chat_endpoint(req: ChatRequest):
     
     # --- DETERMINISTIC MATH INTERCEPTOR ---
     override_injection = quant_solvers.route_and_solve(req.prompt)
-    if override_injection:
+    is_code_interpreter = override_injection == "[CODE_INTERPRETER_MODE]"
+    
+    if override_injection and not is_code_interpreter:
         system_prompt += override_injection
         logger.info(f"Quant Solver Interceptor applied.")
     
-    messages = [
-        {"role": "system", "content": system_prompt},
+    # If code interpreter mode is active, the FIRST pass uses a strict Python override prompt.
+    pass1_system_prompt = system_prompt
+    if is_code_interpreter:
+        pass1_system_prompt = (
+            "You are a strict Python execution agent. You MUST write a python script to calculate the answer to the user's prompt. "
+            "Output ONLY the python script inside ```python ... ``` blocks. Do not explain anything. Just write the code. "
+            "Use print() to output the final answer."
+        )
+        logger.info(f"Code Interpreter strict override activated.")
+        
+    messages_pass1 = [
+        {"role": "system", "content": pass1_system_prompt},
         {"role": "user", "content": req.prompt}
     ]
     
@@ -864,7 +876,7 @@ async def chat_endpoint(req: ChatRequest):
             try:
                 # FIRST PASS: Non-streaming to let it think and write code
                 async with httpx.AsyncClient(timeout=120.0) as client:
-                    payload = {"model": "llama3", "messages": messages, "stream": False}
+                    payload = {"model": "llama3", "messages": messages_pass1, "stream": False}
                     resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                     resp.raise_for_status()
                     data = resp.json()
@@ -890,10 +902,14 @@ async def chat_endpoint(req: ChatRequest):
                             os.unlink(temp_path)
                             
                         # SECOND PASS (Streaming) with the result
-                        messages.append({"role": "assistant", "content": first_response})
-                        messages.append({"role": "user", "content": f"Here is the output of your script:\\n{output}\\nNow provide the final conversational answer. Do NOT output any more python code."})
+                        messages_pass2 = [
+                            {"role": "system", "content": system_prompt},
+                            {"role": "user", "content": req.prompt},
+                            {"role": "assistant", "content": f"Let me calculate that for you.\\n```python\\n{code}\\n```"},
+                            {"role": "user", "content": f"Here is the exact mathematical output from your python execution engine:\\n{output}\\nNow provide the final conversational answer to the user. Explain the concepts like an expert mentor using this exact mathematical answer."}
+                        ]
                         
-                        payload = {"model": "llama3", "messages": messages, "stream": True}
+                        payload = {"model": "llama3", "messages": messages_pass2, "stream": True}
                         async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload) as stream_resp:
                             stream_resp.raise_for_status()
                             async for chunk in stream_resp.aiter_lines():
@@ -921,7 +937,7 @@ async def chat_endpoint(req: ChatRequest):
         # For non-streaming requests (tests)
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
-                payload = {"model": "llama3", "messages": messages, "stream": False}
+                payload = {"model": "llama3", "messages": messages_pass1, "stream": False}
                 resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
@@ -941,9 +957,13 @@ async def chat_endpoint(req: ChatRequest):
                     finally:
                         os.unlink(temp_path)
                         
-                    messages.append({"role": "assistant", "content": first_response})
-                    messages.append({"role": "user", "content": f"Here is the output of your script:\\n{output}\\nNow provide the final conversational answer. Do NOT output any more python code."})
-                    payload = {"model": "llama3", "messages": messages, "stream": False}
+                    messages_pass2 = [
+                        {"role": "system", "content": system_prompt},
+                        {"role": "user", "content": req.prompt},
+                        {"role": "assistant", "content": f"Let me calculate that for you.\\n```python\\n{code}\\n```"},
+                        {"role": "user", "content": f"Here is the exact mathematical output from your python execution engine:\\n{output}\\nNow provide the final conversational answer to the user. Explain the concepts like an expert mentor using this exact mathematical answer."}
+                    ]
+                    payload = {"model": "llama3", "messages": messages_pass2, "stream": False}
                     resp2 = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                     resp2.raise_for_status()
                     data2 = resp2.json()

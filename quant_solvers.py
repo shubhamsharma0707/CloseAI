@@ -252,21 +252,13 @@ def route_and_solve(prompt: str) -> str:
             logger.error(f"DTL parsing error: {e}")
 
     # 5. Macaulay Duration Routing (COMMENTED OUT FOR CODE INTERPRETER TESTING)
-    # if "MACAULAY DURATION" in prompt_upper and "COUPON" in prompt_upper:
-    #     try:
-    #         face_m = re.search(r'Face value.*?(?:₹|Rs\.?)?\s*([\d,]+(?:.\d+)?)', prompt, re.IGNORECASE)
-    #         coupon_m = re.search(r'Coupon.*?\s*(\d+(?:\.\d+)?)\s*%', prompt, re.IGNORECASE)
-    #         maturity_m = re.search(r'Maturity.*?\s*(\d+)\s*years', prompt, re.IGNORECASE)
-    #         yield_m = re.search(r'Yield.*?\s*(\d+(?:\.\d+)?)\s*%', prompt, re.IGNORECASE)
-    #         
-    #         if face_m and coupon_m and maturity_m and yield_m:
-    #             face = float(face_m.group(1).replace(',', ''))
-    #             coupon = float(coupon_m.group(1)) / 100.0
-    #             maturity = int(maturity_m.group(1))
-    #             yield_r = float(yield_m.group(1)) / 100.0
-    #             
-    #             return calculate_macaulay_duration(face, coupon, maturity, yield_r)
-    #     except Exception as e:
-    #         logger.error(f"Macaulay duration parsing error: {e}")
-
+    # 5. Catch-All Math Interpreter (For Code Interpreter Mode)
+    prompt_lower = prompt.lower()
+    math_keywords = ["calculate", "duration", "yield", "rate", "bond", "costing", "profit", "npv", "irr", "tax", "value"]
+    has_math_word = any(k in prompt_lower for k in math_keywords)
+    has_digit = any(char.isdigit() for char in prompt)
+    
+    if has_math_word and has_digit:
+        return "[CODE_INTERPRETER_MODE]"
+        
     return ""

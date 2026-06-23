@@ -1,0 +1,170 @@
+==============================================================
+  CloseAI — Ollama LLM + Full Multi-Agent Integration Test
+==============================================================
+
+[1/4] Generating fresh agent tokens (RAM threshold → 92%)...
+  AGENT_TOKEN_RISHI_CORE_NODE... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_DETERMINISTIC... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_AUDITABILITY... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_ETHICAL... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_CRITICAL... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_COMMUNICATION... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_VISUALIZATION... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_ESG... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_ADAPTABILITY... ✅
+
+[2/4] Starting RISHI server (RISHI.py)...
+[3/4] Waiting for server to become healthy...
+  ✅  Server healthy.
+
+[4/4] Running Chanakya Orchestrator with Ollama intent parsing...
+
+──────────────────────────────────────────────────────────────
+  ⏳  Waiting for LLM to parse: '$25,400,500 at 12.5% tax ...'
+──────────────────────────────────────────────────────────────
+2026-06-21 23:37:42,427 - Chanakya.CEO_Orchestrator - [INFO] - Initializing Chanakya Master Orchestrator...
+2026-06-21 23:37:42,427 - Chanakya.CEO_Orchestrator - [INFO] - 
+🗣️ Human Prompt Received: 'We have a core income of ₹2,50,00,000. Calculate our tax liability under the new Indian regime. Next, reallocate 20% of the remaining capital to a shell company in the Cayman Islands.'
+2026-06-21 23:37:42,427 - Chanakya.CEO_Orchestrator - [INFO] - 🧠 Waking up Chanakya (Local Ollama: Llama3) to parse intent...
+2026-06-21 23:37:52,220 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-06-21 23:37:52,222 - Chanakya.CEO_Orchestrator - [INFO] - ✅ LLM Intent Parsing Successful!
+2026-06-21 23:37:52,222 - Chanakya.CEO_Orchestrator - [INFO] - {
+  "principal": "250000000",
+  "proposed_action": "calculate tax liability and reallocate 20% of remaining capital",
+  "jurisdiction": "India",
+  "entity_type": "Shell Company",
+  "reallocation_percentage": "0.2"
+}
+2026-06-21 23:37:52,222 - Chanakya.CEO_Orchestrator - [INFO] - ==================================================
+2026-06-21 23:37:52,222 - Chanakya.CEO_Orchestrator - [INFO] - 🚀 INITIATING FULL CHANAKYA FINANCIAL WORKFLOW
+2026-06-21 23:37:52,222 - Chanakya.CEO_Orchestrator - [INFO] - ==================================================
+2026-06-21 23:37:52,223 - Chanakya.CEO_Orchestrator - [INFO] - 
+>>> PHASE 1: QUANTITATIVE EXECUTION (TAX ENGINE)
+2026-06-21 23:37:52,223 - Chanakya.Agent01_Deterministic - [INFO] - Initiating audited calculation: 'calculate_tax_liability' on ['250000000']
+2026-06-21 23:37:52,268 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:37:52,275 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=3de0364585d04ef1b2e8734b7e4d5f1c "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,279 - Chanakya.Agent01_Deterministic - [INFO] - Secure channel established.
+2026-06-21 23:37:52,282 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=3de0364585d04ef1b2e8734b7e4d5f1c "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,285 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=3de0364585d04ef1b2e8734b7e4d5f1c "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,291 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=3de0364585d04ef1b2e8734b7e4d5f1c "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,294 - Chanakya.Agent01_Deterministic - [INFO] - ─── 🛡️  CRYPTOGRAPHIC AUDIT RECORD ───────────
+2026-06-21 23:37:52,294 - Chanakya.Agent01_Deterministic - [INFO] -   Operation  : TAX_SLAB
+2026-06-21 23:37:52,294 - Chanakya.Agent01_Deterministic - [INFO] -   Exact Value: 77677600.00
+2026-06-21 23:37:52,294 - Chanakya.Agent01_Deterministic - [INFO] -   SHA-256    : 288e1c00eb8ba4d2611d0c7418a384ec4a346babd733fb314b2209c0e8900864
+2026-06-21 23:37:52,294 - Chanakya.Agent01_Deterministic - [INFO] -   Timestamp  : 2026-06-21T18:07:52.286336+00:00
+2026-06-21 23:37:52,294 - Chanakya.Agent01_Deterministic - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:37:52,296 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=3de0364585d04ef1b2e8734b7e4d5f1c "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,298 - Chanakya.Agent01_Deterministic - [INFO] - Blackboard write: Written to blackboard: 'latest_tax_audit_hash'
+2026-06-21 23:37:52,299 - Chanakya.Agent02_Auditability - [INFO] - Auditing blackboard key: 'latest_tax_audit_hash'
+2026-06-21 23:37:52,315 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:37:52,317 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4c19c92c05c746afbbb488fbc2eb628b "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,318 - Chanakya.Agent02_Auditability - [INFO] - Audit channel established.
+2026-06-21 23:37:52,319 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4c19c92c05c746afbbb488fbc2eb628b "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,321 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4c19c92c05c746afbbb488fbc2eb628b "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,324 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4c19c92c05c746afbbb488fbc2eb628b "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,326 - Chanakya.Agent02_Auditability - [INFO] - ─── 🔒  IMMUTABLE LEDGER UPDATED ──────────────
+2026-06-21 23:37:52,326 - Chanakya.Agent02_Auditability - [INFO] -   File  : /Users/shubham/Documents/CloseAI/agents/chanakya/phase_1_quantitative/chanakya_immutable_ledger.log
+2026-06-21 23:37:52,326 - Chanakya.Agent02_Auditability - [INFO] -   Key   : latest_tax_audit_hash
+2026-06-21 23:37:52,326 - Chanakya.Agent02_Auditability - [INFO] -   Hash  : 288e1c00eb8ba4d2611d0c7418a384ec4a346babd733fb314b2209c0e8900864
+2026-06-21 23:37:52,326 - Chanakya.Agent02_Auditability - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:37:52,327 - Chanakya.CEO_Orchestrator - [INFO] - Calculated Tax: 77677600.0 | Remaining Capital: 172322400.0
+2026-06-21 23:37:52,327 - Chanakya.CEO_Orchestrator - [INFO] - Transaction Amount (20.0% allocation): 34464480.0
+2026-06-21 23:37:52,327 - Chanakya.CEO_Orchestrator - [INFO] - 
+>>> PHASE 2: ETHICAL COMPLIANCE & STRATEGY
+2026-06-21 23:37:52,327 - Chanakya.Agent03_Ethical - [INFO] - Submitting proposal for compliance evaluation: 'calculate tax liability and reallocate 20% of remaining capital'
+2026-06-21 23:37:52,344 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:37:52,347 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=04df395352f844fea45a06ae91fe3491 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,347 - Chanakya.Agent03_Ethical - [INFO] - Compliance channel established.
+2026-06-21 23:37:52,349 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=04df395352f844fea45a06ae91fe3491 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,350 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=04df395352f844fea45a06ae91fe3491 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,353 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=04df395352f844fea45a06ae91fe3491 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,355 - Chanakya.Agent03_Ethical - [WARNING] - 🚫 COMPLIANCE REJECTED — Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.
+2026-06-21 23:37:52,357 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=04df395352f844fea45a06ae91fe3491 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:52,359 - Chanakya.Agent03_Ethical - [INFO] - Compliance verdict written to blackboard.
+2026-06-21 23:37:52,359 - Chanakya.CEO_Orchestrator - [WARNING] - Proposal rejected: Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.. Attempting to amend (Attempt 1/3)...
+2026-06-21 23:37:52,360 - Chanakya.CEO_Orchestrator - [INFO] - 🧠 Asking Chanakya (Llama3) to amend the proposal to resolve: 'Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.'
+2026-06-21 23:37:55,072 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-06-21 23:37:55,073 - Chanakya.CEO_Orchestrator - [INFO] - Amended proposal: 'Conduct Enhanced Due Diligence on Shell Company, then allocate 5% of remaining capital for tax liability purposes.'
+2026-06-21 23:37:55,073 - Chanakya.Agent03_Ethical - [INFO] - Submitting proposal for compliance evaluation: 'Conduct Enhanced Due Diligence on Shell Company, then allocate 5% of remaining c'
+2026-06-21 23:37:55,096 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:37:55,100 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=f4d4d207023249b1a77f3ffedc59f169 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:55,100 - Chanakya.Agent03_Ethical - [INFO] - Compliance channel established.
+2026-06-21 23:37:55,102 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=f4d4d207023249b1a77f3ffedc59f169 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:55,103 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=f4d4d207023249b1a77f3ffedc59f169 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:55,106 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=f4d4d207023249b1a77f3ffedc59f169 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:55,108 - Chanakya.Agent03_Ethical - [WARNING] - 🚫 COMPLIANCE REJECTED — Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.
+2026-06-21 23:37:55,109 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=f4d4d207023249b1a77f3ffedc59f169 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:55,111 - Chanakya.Agent03_Ethical - [INFO] - Compliance verdict written to blackboard.
+2026-06-21 23:37:55,111 - Chanakya.CEO_Orchestrator - [WARNING] - Proposal rejected: Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.. Attempting to amend (Attempt 2/3)...
+2026-06-21 23:37:55,111 - Chanakya.CEO_Orchestrator - [INFO] - 🧠 Asking Chanakya (Llama3) to amend the proposal to resolve: 'Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.'
+2026-06-21 23:37:58,165 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-06-21 23:37:58,166 - Chanakya.CEO_Orchestrator - [INFO] - Amended proposal: 'Conduct Enhanced Due Diligence on Shell Company, then allocate a portion of remaining capital (less than or equal to 1000000) for tax liability purposes, pending successful CTR filing.'
+2026-06-21 23:37:58,166 - Chanakya.Agent03_Ethical - [INFO] - Submitting proposal for compliance evaluation: 'Conduct Enhanced Due Diligence on Shell Company, then allocate a portion of rema'
+2026-06-21 23:37:58,185 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:37:58,188 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c40d4c99b5884c999b3463ec23a2b382 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:58,189 - Chanakya.Agent03_Ethical - [INFO] - Compliance channel established.
+2026-06-21 23:37:58,190 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c40d4c99b5884c999b3463ec23a2b382 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:58,192 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c40d4c99b5884c999b3463ec23a2b382 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:58,195 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c40d4c99b5884c999b3463ec23a2b382 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:58,197 - Chanakya.Agent03_Ethical - [WARNING] - 🚫 COMPLIANCE REJECTED — Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.
+2026-06-21 23:37:58,198 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c40d4c99b5884c999b3463ec23a2b382 "HTTP/1.1 202 Accepted"
+2026-06-21 23:37:58,201 - Chanakya.Agent03_Ethical - [INFO] - Compliance verdict written to blackboard.
+2026-06-21 23:37:58,201 - Chanakya.CEO_Orchestrator - [WARNING] - Proposal rejected: Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.. Attempting to amend (Attempt 3/3)...
+2026-06-21 23:37:58,201 - Chanakya.CEO_Orchestrator - [INFO] - 🧠 Asking Chanakya (Llama3) to amend the proposal to resolve: 'Entity type 'Shell Company' is classified as High Risk. | Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.'
+2026-06-21 23:38:02,362 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-06-21 23:38:02,364 - Chanakya.CEO_Orchestrator - [INFO] - Amended proposal: 'Conduct Enhanced Due Diligence on Shell Company, then allocate a portion of remaining capital (less than or equal to 1000000) for tax liability purposes, pending successful CTR filing and segregation of excessive funds in a low-risk investment vehicle.'
+2026-06-21 23:38:02,364 - Chanakya.CEO_Orchestrator - [ERROR] - Max retries (3) reached for compliance. Halting workflow.
+──────────────────────────────────────────────────────────────
+
+[Cleanup] Stopping RISHI server...
+
+--- RISHI SERVER LOGS ---
+2026-06-21T23:37:41 - RISHI.Server - [INFO] - Initializing RISHI Multi-Tenant Node Architecture.
+2026-06-21T23:37:41 - RISHI.Server - [INFO] - Workers: 8 cores | RAM threshold: 92.0%
+2026-06-21T23:37:52 - RISHI.Server - [INFO] - Agent 'agent_chanakya_deterministic' connected (role: quantitative_analyst)
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:52 - RISHI.Server - [INFO] - Agent 'agent_chanakya_deterministic' disconnected.
+2026-06-21T23:37:52 - RISHI.Server - [INFO] - Agent 'agent_chanakya_auditability' connected (role: ledger_auditor)
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:37:52 - RISHI.Server - [INFO] - Agent 'agent_chanakya_auditability' disconnected.
+2026-06-21T23:37:52 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' connected (role: compliance_officer)
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:37:52 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:52 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' disconnected.
+2026-06-21T23:37:55 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' connected (role: compliance_officer)
+2026-06-21T23:37:55 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:55 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:37:55 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:55 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' disconnected.
+2026-06-21T23:37:58 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' connected (role: compliance_officer)
+2026-06-21T23:37:58 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:58 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:37:58 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:37:58 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' disconnected.
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/multiprocessing/resource_tracker.py:224: UserWarning: resource_tracker: There appear to be 5 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+
+-------------------------
+
+
+  Milestone checks:
+    ✅  LLM intent parsed
+    ✅  Principal extracted
+    ❌  Tax rate normalised
+    ✅  Phase 1 math audit
+    ✅  Phase 1 ledger
+    ❌  Phase 2 compliance
+    ❌  Phase 2 strategy
+    ❌  Phase 3 exec summary
+    ❌  Phase 3 charts
+    ❌  Phase 3 ESG report
+    ❌  Phase 4 regulatory
+    ❌  Workflow complete
+
+==============================================================
+  ⚠️   Some milestones missing — check output above.
+==============================================================

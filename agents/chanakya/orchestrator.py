@@ -47,7 +47,7 @@ class ChanakyaOrchestrator:
         Forces the output into JSON format for safe extraction.
         """
         logger.info(f"\n🗣️ Human Prompt Received: '{user_prompt}'")
-        logger.info("🧠 Waking up Chanakya (Local Ollama: Llama3) to parse intent...")
+        logger.info("🧠 Waking up Chanakya (Local Ollama: Llama3.1:8b) to parse intent...")
         
         system_prompt = """
         You are Chanakya, a master financial AI orchestrator. 
@@ -67,7 +67,7 @@ class ChanakyaOrchestrator:
             from ollama import AsyncClient
             
             # Using format='json' forces the model to output valid JSON
-            response = await AsyncClient().chat(model='llama3', messages=[
+            response = await AsyncClient().chat(model='llama3.1:8b', messages=[
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_prompt}
             ], format='json')
@@ -109,7 +109,7 @@ class ChanakyaOrchestrator:
             
         except Exception as e:
             logger.error(f"❌ LLM Parsing Failed: {e}")
-            logger.error("Make sure Ollama is running in the background ('ollama serve') and 'llama3' is pulled.")
+            logger.error("Make sure Ollama is running in the background ('ollama serve') and 'llama3.1:8b' is pulled.")
             return None
 
     async def run_full_financial_workflow(self, principal: str, reallocation_percentage: str, proposed_action: str, jurisdiction: str, entity_type: str):

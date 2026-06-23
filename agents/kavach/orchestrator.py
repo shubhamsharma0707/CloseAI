@@ -38,7 +38,7 @@ class KavachOrchestrator:
         Uses a local Ollama model to translate human text into structured security intent.
         """
         logger.info(f"\n🗣️ Human Request Received: '{user_prompt}'")
-        logger.info("🧠 Waking up Kavach (Local Ollama: Llama3) to parse security intent...")
+        logger.info("🧠 Waking up Kavach (Local Ollama: Llama3.1:8b) to parse security intent...")
         
         system_prompt = """
         You are Kavach, a Master Cybersecurity AI Orchestrator (CISO).
@@ -54,7 +54,7 @@ class KavachOrchestrator:
         try:
             from ollama import AsyncClient
             
-            response = await AsyncClient().chat(model='llama3', messages=[
+            response = await AsyncClient().chat(model='llama3.1:8b', messages=[
                 {'role': 'system', 'content': system_prompt},
                 {'role': 'user', 'content': user_prompt}
             ], format='json')
@@ -82,7 +82,7 @@ class KavachOrchestrator:
             
         except Exception as e:
             logger.error(f"❌ LLM Parsing Failed: {e}")
-            logger.error("Make sure Ollama is running in the background ('ollama serve') and 'llama3' is pulled.")
+            logger.error("Make sure Ollama is running in the background ('ollama serve') and 'llama3.1:8b' is pulled.")
             return None
 
     async def run_full_security_workflow(self, target: str, scan_type: str, auto_approve: bool):

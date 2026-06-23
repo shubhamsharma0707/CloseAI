@@ -876,7 +876,7 @@ async def chat_endpoint(req: ChatRequest):
             try:
                 # FIRST PASS: Non-streaming to let it think and write code
                 async with httpx.AsyncClient(timeout=120.0) as client:
-                    payload = {"model": "llama3", "messages": messages_pass1, "stream": False}
+                    payload = {"model": "llama3.1:8b", "messages": messages_pass1, "stream": False}
                     resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                     resp.raise_for_status()
                     data = resp.json()
@@ -909,7 +909,7 @@ async def chat_endpoint(req: ChatRequest):
                             {"role": "user", "content": f"Here is the exact mathematical output from your python execution engine:\\n{output}\\nNow provide the final conversational answer to the user. Explain the concepts like an expert mentor using this exact mathematical answer."}
                         ]
                         
-                        payload = {"model": "llama3", "messages": messages_pass2, "stream": True}
+                        payload = {"model": "llama3.1:8b", "messages": messages_pass2, "stream": True}
                         async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload) as stream_resp:
                             stream_resp.raise_for_status()
                             async for chunk in stream_resp.aiter_lines():
@@ -937,7 +937,7 @@ async def chat_endpoint(req: ChatRequest):
         # For non-streaming requests (tests)
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
-                payload = {"model": "llama3", "messages": messages_pass1, "stream": False}
+                payload = {"model": "llama3.1:8b", "messages": messages_pass1, "stream": False}
                 resp = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                 resp.raise_for_status()
                 data = resp.json()
@@ -963,7 +963,7 @@ async def chat_endpoint(req: ChatRequest):
                         {"role": "assistant", "content": f"Let me calculate that for you.\\n```python\\n{code}\\n```"},
                         {"role": "user", "content": f"Here is the exact mathematical output from your python execution engine:\\n{output}\\nNow provide the final conversational answer to the user. Explain the concepts like an expert mentor using this exact mathematical answer."}
                     ]
-                    payload = {"model": "llama3", "messages": messages_pass2, "stream": False}
+                    payload = {"model": "llama3.1:8b", "messages": messages_pass2, "stream": False}
                     resp2 = await client.post("http://127.0.0.1:11434/api/chat", json=payload)
                     resp2.raise_for_status()
                     data2 = resp2.json()

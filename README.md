@@ -2,7 +2,7 @@
 
 CloseAI is a secure, high-performance multi-agent framework designed to orchestrate suites of specialized AI agents. The platform translates natural language intents into highly structured, autonomous workflows using a centralized architecture managed by the **RISHI Core Node**. 
 
-The system leverages **local LLMs (like Ollama llama3)** to parse human intents securely and privately. It then delegates the work to dedicated agent teams that act as subject matter experts, enforcing strict rules, human-approval locks, and cryptographic auditing at each step.
+The system leverages **local LLMs (like Ollama llama3.1:8b)** to parse human intents securely and privately. It then delegates the work to dedicated agent teams that act as subject matter experts, enforcing strict rules, human-approval locks, and cryptographic auditing at each step.
 
 Currently, the project features two primary Orchestrators:
 1. **Chanakya** (The Chief Financial Officer): Handles quantitative finance, strategy, and ethical compliance.
@@ -13,7 +13,7 @@ Currently, the project features two primary Orchestrators:
 ## 🌟 Key Features
 
 - **Centralized Blackboard Architecture**: Run on FastAPI (**RISHI**), allowing real-time SSE stream handshakes, safe concurrent memory updates, and strict memory limits.
-- **Local LLM Intent Parsing**: Uses local `llama3` to extract variables securely from unstructured human inputs, preventing sensitive data from leaving the local machine.
+- **Local LLM Intent Parsing**: Uses local `llama3.1:8b` to extract variables securely from unstructured human inputs, preventing sensitive data from leaving the local machine.
 - **Strict Safe Agent Design**: Agents are sandboxed by their roles. High-risk actions (like simulated exploits or questionable financial moves) trigger **Human Approval Locks** and halt the workflow.
 - **Cryptographic Audit Trails**: Real-time HMAC token comparison and state integrity hashing written to immutable ledger files.
 
@@ -53,9 +53,9 @@ To prevent unauthorized blackboard updates, every communication within the inter
 ### Prerequisites
 
 1. **Python 3.10+**
-2. **Ollama**: Install [Ollama](https://ollama.com) and pull the `llama3` model:
+2. **Ollama**: Install [Ollama](https://ollama.com) and pull the `llama3.1:8b` model:
    ```bash
-   ollama pull llama3:latest
+   ollama pull llama3.1:8b:latest
    ```
 
 ### 1. Installation

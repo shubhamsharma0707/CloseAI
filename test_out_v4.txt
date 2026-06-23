@@ -1,0 +1,269 @@
+==============================================================
+  CloseAI — Ollama LLM + Full Multi-Agent Integration Test
+==============================================================
+
+[1/4] Generating fresh agent tokens (RAM threshold → 92%)...
+  AGENT_TOKEN_RISHI_CORE_NODE... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_DETERMINISTIC... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_AUDITABILITY... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_ETHICAL... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_CRITICAL... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_COMMUNICATION... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_VISUALIZATION... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_ESG... ✅
+  AGENT_TOKEN_AGENT_CHANAKYA_ADAPTABILITY... ✅
+
+[2/4] Starting RISHI server (RISHI.py)...
+[3/4] Waiting for server to become healthy...
+  ✅  Server healthy.
+
+[4/4] Running Chanakya Orchestrator with Ollama intent parsing...
+
+──────────────────────────────────────────────────────────────
+  ⏳  Waiting for LLM to parse: 'We have a core income ...'
+──────────────────────────────────────────────────────────────
+2026-06-21 23:53:11,472 - Chanakya.CEO_Orchestrator - [INFO] - Initializing Chanakya Master Orchestrator...
+2026-06-21 23:53:11,472 - Chanakya.CEO_Orchestrator - [INFO] - 
+🗣️ Human Prompt Received: 'We have a core income of ₹2,50,00,000. Calculate our tax liability under the new Indian regime. Next, reallocate 20% of the remaining capital to a green energy fund in India.'
+2026-06-21 23:53:11,472 - Chanakya.CEO_Orchestrator - [INFO] - 🧠 Waking up Chanakya (Local Ollama: Llama3) to parse intent...
+2026-06-21 23:53:18,930 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:11434/api/chat "HTTP/1.1 200 OK"
+2026-06-21 23:53:18,936 - Chanakya.CEO_Orchestrator - [INFO] - ✅ LLM Intent Parsing Successful!
+2026-06-21 23:53:18,937 - Chanakya.CEO_Orchestrator - [INFO] - {
+  "principal": "250000000",
+  "proposed_action": "Calculate tax liability and allocate funds to a green energy fund in India",
+  "jurisdiction": "India",
+  "entity_type": "Unknown",
+  "reallocation_percentage": "0.2"
+}
+2026-06-21 23:53:18,937 - Chanakya.CEO_Orchestrator - [INFO] - ==================================================
+2026-06-21 23:53:18,937 - Chanakya.CEO_Orchestrator - [INFO] - 🚀 INITIATING FULL CHANAKYA FINANCIAL WORKFLOW
+2026-06-21 23:53:18,937 - Chanakya.CEO_Orchestrator - [INFO] - ==================================================
+2026-06-21 23:53:18,937 - Chanakya.CEO_Orchestrator - [INFO] - 
+>>> PHASE 1: QUANTITATIVE EXECUTION (TAX ENGINE)
+2026-06-21 23:53:18,937 - Chanakya.Agent01_Deterministic - [INFO] - Initiating audited calculation: 'calculate_tax_liability' on ['250000000']
+2026-06-21 23:53:18,961 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:18,965 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4e8f585e6ccd450e98a1e557e5bf29fe "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,967 - Chanakya.Agent01_Deterministic - [INFO] - Secure channel established.
+2026-06-21 23:53:18,968 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4e8f585e6ccd450e98a1e557e5bf29fe "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,969 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4e8f585e6ccd450e98a1e557e5bf29fe "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,973 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4e8f585e6ccd450e98a1e557e5bf29fe "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,974 - Chanakya.Agent01_Deterministic - [INFO] - ─── 🛡️  CRYPTOGRAPHIC AUDIT RECORD ───────────
+2026-06-21 23:53:18,974 - Chanakya.Agent01_Deterministic - [INFO] -   Operation  : TAX_SLAB
+2026-06-21 23:53:18,974 - Chanakya.Agent01_Deterministic - [INFO] -   Exact Value: 77677600.00
+2026-06-21 23:53:18,974 - Chanakya.Agent01_Deterministic - [INFO] -   SHA-256    : ad20f77ae04bf7a256432d79d7d26b0d0dd817c441acdc473e2b939d565b8452
+2026-06-21 23:53:18,974 - Chanakya.Agent01_Deterministic - [INFO] -   Timestamp  : 2026-06-21T18:23:18.970858+00:00
+2026-06-21 23:53:18,974 - Chanakya.Agent01_Deterministic - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:53:18,975 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=4e8f585e6ccd450e98a1e557e5bf29fe "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,976 - Chanakya.Agent01_Deterministic - [INFO] - Blackboard write: Written to blackboard: 'latest_tax_audit_hash'
+2026-06-21 23:53:18,976 - Chanakya.Agent02_Auditability - [INFO] - Auditing blackboard key: 'latest_tax_audit_hash'
+2026-06-21 23:53:18,984 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:18,986 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=e59848f2df0d4789966537b940c2be8a "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,986 - Chanakya.Agent02_Auditability - [INFO] - Audit channel established.
+2026-06-21 23:53:18,987 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=e59848f2df0d4789966537b940c2be8a "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,987 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=e59848f2df0d4789966537b940c2be8a "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,989 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=e59848f2df0d4789966537b940c2be8a "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:18,990 - Chanakya.Agent02_Auditability - [INFO] - ─── 🔒  IMMUTABLE LEDGER UPDATED ──────────────
+2026-06-21 23:53:18,990 - Chanakya.Agent02_Auditability - [INFO] -   File  : /Users/shubham/Documents/CloseAI/agents/chanakya/phase_1_quantitative/chanakya_immutable_ledger.log
+2026-06-21 23:53:18,990 - Chanakya.Agent02_Auditability - [INFO] -   Key   : latest_tax_audit_hash
+2026-06-21 23:53:18,990 - Chanakya.Agent02_Auditability - [INFO] -   Hash  : ad20f77ae04bf7a256432d79d7d26b0d0dd817c441acdc473e2b939d565b8452
+2026-06-21 23:53:18,990 - Chanakya.Agent02_Auditability - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:53:18,991 - Chanakya.CEO_Orchestrator - [INFO] - Calculated Tax: 77677600.0 | Remaining Capital: 172322400.0
+2026-06-21 23:53:18,991 - Chanakya.CEO_Orchestrator - [INFO] - Transaction Amount (20.0% allocation): 34464480.0
+2026-06-21 23:53:18,991 - Chanakya.CEO_Orchestrator - [INFO] - 
+>>> PHASE 2: ETHICAL COMPLIANCE & STRATEGY
+2026-06-21 23:53:18,991 - Chanakya.Agent03_Ethical - [INFO] - Submitting proposal for compliance evaluation: 'Calculate tax liability and allocate funds to a green energy fund in India'
+2026-06-21 23:53:18,999 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:19,000 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b5ea533e6a7b4ff1afdd9e977124fc2d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,000 - Chanakya.Agent03_Ethical - [INFO] - Compliance channel established.
+2026-06-21 23:53:19,001 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b5ea533e6a7b4ff1afdd9e977124fc2d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,002 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b5ea533e6a7b4ff1afdd9e977124fc2d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,003 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b5ea533e6a7b4ff1afdd9e977124fc2d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,004 - Chanakya.Agent03_Ethical - [WARNING] - ⚠️ EDD REQUIRED — Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.
+2026-06-21 23:53:19,005 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b5ea533e6a7b4ff1afdd9e977124fc2d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,006 - Chanakya.Agent03_Ethical - [INFO] - Compliance verdict written to blackboard.
+2026-06-21 23:53:19,006 - Chanakya.CEO_Orchestrator - [WARNING] - ⚠️ EDD REQUIRED: Transaction amount (34464480.0) exceeds CTR threshold (1000000). Enhanced Due Diligence required.
+2026-06-21 23:53:19,006 - Chanakya.Agent04_Critical - [INFO] - Starting critical analysis for: '{"proposal": "Calculate tax liability and allocate funds to a green energy fund '
+2026-06-21 23:53:19,014 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:19,015 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,016 - Chanakya.Agent04_Critical - [INFO] - Strategy channel established.
+2026-06-21 23:53:19,017 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,018 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,019 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,021 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,022 - Chanakya.Agent04_Critical - [INFO] - Context: audit_present=True, compliance_present=True
+2026-06-21 23:53:19,022 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] - ─── STRATEGIC ANALYSIS RECORD ─────────────────
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] -   Insight 1: Proposal scope: 'Calculate tax liability and allocate funds to a green energy fund in India'
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] -   Insight 2: Audit chain verified.
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] -   Insight 3: Compliance gate passed.
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] -   Insight 4: Sensitivity Analysis: Base Capital = ₹34,464,480.00
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] -   Insight 5: Sensitivity Analysis: -5% FX Shock = ₹32,741,256.00
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] -   Insight 6: Sensitivity Analysis: +5% FX Shock = ₹36,187,704.00
+2026-06-21 23:53:19,023 - Chanakya.Agent04_Critical - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:53:19,024 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=b2484562dedc4011a11ca500e492fc34 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,025 - Chanakya.Agent04_Critical - [INFO] - Strategic plan written to blackboard.
+2026-06-21 23:53:19,025 - Chanakya.CEO_Orchestrator - [INFO] - 
+>>> PHASE 3: REPORTING & OUTPUT GENERATION
+2026-06-21 23:53:19,025 - Chanakya.CEO_Orchestrator - [INFO] - Triggering Communication, Visualization, and ESG Agents concurrently...
+2026-06-21 23:53:19,025 - Chanakya.Agent05_Communication - [INFO] - Generating executive summary...
+2026-06-21 23:53:19,028 - Chanakya.Agent06_Visualization - [INFO] - Generating visualization payloads...
+2026-06-21 23:53:19,031 - Chanakya.Agent07_ESG - [INFO] - Starting ESG and carbon footprint analysis...
+2026-06-21 23:53:19,046 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:19,046 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:19,046 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:19,048 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c8966661a1c14ae9923eb4d515e9a86d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,048 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=7c3d1c18e0ea48418ff4a93187725a90 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,048 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=761af229b1564c53ae45e7d0ad893063 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,049 - Chanakya.Agent05_Communication - [INFO] - Communication channel established.
+2026-06-21 23:53:19,049 - Chanakya.Agent07_ESG - [INFO] - ESG channel established.
+2026-06-21 23:53:19,049 - Chanakya.Agent06_Visualization - [INFO] - Visualization channel established.
+2026-06-21 23:53:19,050 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c8966661a1c14ae9923eb4d515e9a86d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,050 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=7c3d1c18e0ea48418ff4a93187725a90 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,050 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=761af229b1564c53ae45e7d0ad893063 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,051 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c8966661a1c14ae9923eb4d515e9a86d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,052 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=7c3d1c18e0ea48418ff4a93187725a90 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,052 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=761af229b1564c53ae45e7d0ad893063 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,053 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c8966661a1c14ae9923eb4d515e9a86d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,055 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=7c3d1c18e0ea48418ff4a93187725a90 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,055 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=761af229b1564c53ae45e7d0ad893063 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,056 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c8966661a1c14ae9923eb4d515e9a86d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,057 - Chanakya.Agent05_Communication - [INFO] - 
+==============================================
+2026-06-21 23:53:19,057 - Chanakya.Agent05_Communication - [INFO] - EXECUTIVE SUMMARY
+=================
+Proposed Action: {"proposal": "Calculate tax liability and allocate funds to a green energy fund in India", "transaction_amount": "34464480.0", "entity_type": "Unknown"}
+
+Key Insights:
+  • Proposal scope: 'Calculate tax liability and allocate funds to a green energy fund in India'
+  • Audit chain verified.
+  • Compliance gate passed.
+  • Sensitivity Analysis: Base Capital = ₹34,464,480.00
+  • Sensitivity Analysis: -5% FX Shock = ₹32,741,256.00
+  • Sensitivity Analysis: +5% FX Shock = ₹36,187,704.00
+
+Risk Factors:
+  None identified.
+
+Generated: 2026-06-21 18:23 UTC
+2026-06-21 23:53:19,057 - Chanakya.Agent05_Communication - [INFO] - ==============================================
+2026-06-21 23:53:19,058 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=7c3d1c18e0ea48418ff4a93187725a90 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,058 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=761af229b1564c53ae45e7d0ad893063 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] - ─── 🌍  ESG REPORT ─────────────────────────────
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] -   Carbon Footprint : 8616.12 Metric Tons CO2e
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] -   ESG Compliance   : REVIEW_REQUIRED
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] -   Recommendation   : Offset remaining emissions via certified carbon credits.
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] -   Recommendation   : Publish annual sustainability report (GRI Standards).
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] -   Recommendation   : Set Science Based Targets (SBTi) within 12 months.
+2026-06-21 23:53:19,059 - Chanakya.Agent07_ESG - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:53:19,059 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=c8966661a1c14ae9923eb4d515e9a86d "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,060 - Chanakya.Agent06_Visualization - [INFO] - ─── 📊  VISUALIZATION COMPLETE ─────────────────
+2026-06-21 23:53:19,060 - Chanakya.Agent06_Visualization - [INFO] -   Dashboard : Local Preview Only
+2026-06-21 23:53:19,060 - Chanakya.Agent06_Visualization - [INFO] -   Chart     : charts/risk_matrix.png
+2026-06-21 23:53:19,060 - Chanakya.Agent06_Visualization - [INFO] -   Chart     : charts/budget_allocation.png
+2026-06-21 23:53:19,060 - Chanakya.Agent06_Visualization - [INFO] -   Chart     : charts/esg_scores.png
+2026-06-21 23:53:19,060 - Chanakya.Agent06_Visualization - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:53:19,061 - Chanakya.Agent05_Communication - [INFO] - Executive summary written to blackboard.
+2026-06-21 23:53:19,061 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=7c3d1c18e0ea48418ff4a93187725a90 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,062 - Chanakya.Agent07_ESG - [INFO] - ESG report written to blackboard.
+2026-06-21 23:53:19,062 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=761af229b1564c53ae45e7d0ad893063 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,063 - Chanakya.Agent06_Visualization - [INFO] - Visualization metadata written to blackboard.
+2026-06-21 23:53:19,063 - Chanakya.CEO_Orchestrator - [INFO] - 
+>>> PHASE 4: SYSTEM ADAPTABILITY
+2026-06-21 23:53:19,063 - Chanakya.Agent08_Adaptability - [INFO] - Research query: '2026 global tax and ESG compliance updates'
+2026-06-21 23:53:19,070 - httpx - [INFO] - HTTP Request: GET http://127.0.0.1:8000/sse "HTTP/1.1 200 OK"
+2026-06-21 23:53:19,072 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=582175c20b8d4cbb893f97a7dbdf5158 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,072 - Chanakya.Agent08_Adaptability - [INFO] - Research channel established.
+2026-06-21 23:53:19,073 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=582175c20b8d4cbb893f97a7dbdf5158 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:19,073 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=582175c20b8d4cbb893f97a7dbdf5158 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:20,422 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=582175c20b8d4cbb893f97a7dbdf5158 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:20,425 - Chanakya.Agent08_Adaptability - [INFO] - ─── 🧠  REGULATORY RESEARCH COMPLETE ──────────
+2026-06-21 23:53:20,425 - Chanakya.Agent08_Adaptability - [INFO] -   Timestamp : 2026-06-21T18:23:20.416679+00:00
+2026-06-21 23:53:20,425 - Chanakya.Agent08_Adaptability - [INFO] -   [UPDATE]  : [MOCK] IFRS S1/S2 mandatory sustainability disclosure effective FY2026.
+2026-06-21 23:53:20,426 - Chanakya.Agent08_Adaptability - [INFO] -   [UPDATE]  : [MOCK] Pillar Two global minimum tax (15%) enforcement begins Q1 2026.
+2026-06-21 23:53:20,426 - Chanakya.Agent08_Adaptability - [INFO] -   [UPDATE]  : [MOCK] SEC climate disclosure rules finalised — large accelerated filers first.
+2026-06-21 23:53:20,426 - Chanakya.Agent08_Adaptability - [INFO] -   [UPDATE]  : [MOCK] EU CSRD extended to non-EU parent companies with EU subsidiaries.
+2026-06-21 23:53:20,426 - Chanakya.Agent08_Adaptability - [WARNING] -   [ALERT]   : Increased OECD scrutiny of transfer-pricing arrangements in tech sector.
+2026-06-21 23:53:20,426 - Chanakya.Agent08_Adaptability - [WARNING] -   [ALERT]   : Greenwashing enforcement actions rising — ensure ESG claims are auditable.
+2026-06-21 23:53:20,426 - Chanakya.Agent08_Adaptability - [INFO] - ───────────────────────────────────────────────
+2026-06-21 23:53:20,428 - httpx - [INFO] - HTTP Request: POST http://127.0.0.1:8000/messages/?session_id=582175c20b8d4cbb893f97a7dbdf5158 "HTTP/1.1 202 Accepted"
+2026-06-21 23:53:20,430 - Chanakya.Agent08_Adaptability - [INFO] - Regulatory updates written to blackboard.
+2026-06-21 23:53:20,431 - Chanakya.CEO_Orchestrator - [INFO] - 
+==================================================
+2026-06-21 23:53:20,431 - Chanakya.CEO_Orchestrator - [INFO] - ✅ CHANAKYA WORKFLOW COMPLETE
+2026-06-21 23:53:20,431 - Chanakya.CEO_Orchestrator - [INFO] - ==================================================
+──────────────────────────────────────────────────────────────
+
+[Cleanup] Stopping RISHI server...
+
+--- RISHI SERVER LOGS ---
+2026-06-21T23:53:10 - RISHI.Server - [INFO] - Initializing RISHI Multi-Tenant Node Architecture.
+2026-06-21T23:53:10 - RISHI.Server - [INFO] - Workers: 8 cores | RAM threshold: 92.0%
+2026-06-21T23:53:18 - RISHI.Server - [INFO] - Agent 'agent_chanakya_deterministic' connected (role: quantitative_analyst)
+2026-06-21T23:53:18 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:18 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:18 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:18 - RISHI.Server - [INFO] - Agent 'agent_chanakya_deterministic' disconnected.
+2026-06-21T23:53:18 - RISHI.Server - [INFO] - Agent 'agent_chanakya_auditability' connected (role: ledger_auditor)
+2026-06-21T23:53:18 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:18 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:18 - RISHI.Server - [INFO] - Agent 'agent_chanakya_auditability' disconnected.
+2026-06-21T23:53:18 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' connected (role: compliance_officer)
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_ethical' disconnected.
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_critical' connected (role: strategic_analyst)
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_critical' disconnected.
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_communication' connected (role: executive_writer)
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_esg' connected (role: esg_analyst)
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_visualization' connected (role: data_visualizer)
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_communication' disconnected.
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_esg' disconnected.
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_visualization' disconnected.
+2026-06-21T23:53:19 - RISHI.Server - [INFO] - Agent 'agent_chanakya_adaptability' connected (role: regulatory_researcher)
+2026-06-21T23:53:19 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:20 - RISHI.Server - [WARNING] - Live SEC RSS fetch failed (<urlopen error [SSL: CERTIFICATE_VERIFY_FAILED] certificate verify failed: unable to get local issuer certificate (_ssl.c:997)>). Falling back to mock data.
+2026-06-21T23:53:20 - mcp.server.lowlevel.server - [INFO] - Processing request of type ListToolsRequest
+2026-06-21T23:53:20 - mcp.server.lowlevel.server - [INFO] - Processing request of type CallToolRequest
+2026-06-21T23:53:20 - RISHI.Server - [INFO] - Agent 'agent_chanakya_adaptability' disconnected.
+/Library/Frameworks/Python.framework/Versions/3.10/lib/python3.10/multiprocessing/resource_tracker.py:224: UserWarning: resource_tracker: There appear to be 5 leaked semaphore objects to clean up at shutdown
+  warnings.warn('resource_tracker: There appear to be %d '
+
+-------------------------
+
+
+  Milestone checks:
+    ✅  LLM intent parsed
+    ✅  Principal extracted
+    ✅  Reallocation percentage
+    ✅  Phase 1 math audit
+    ✅  Phase 1 ledger
+    ✅  Phase 2 compliance
+    ✅  Phase 2 strategy
+    ✅  Phase 3 exec summary
+    ✅  Phase 3 charts
+    ✅  Phase 3 ESG report
+    ✅  Phase 4 regulatory
+    ✅  Workflow complete
+
+==============================================================
+  ✅  ALL 12 MILESTONES PASSED
+  LLM → Decimal math → Compliance → Strategy → ESG → Done
+==============================================================

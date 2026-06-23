@@ -54,7 +54,7 @@ def generate_env() -> dict[str, str]:
     for agent_id in AGENT_IDS:
         key = f"AGENT_TOKEN_{agent_id}"
         env[key] = secrets.token_hex(32)
-    # Ollama + llama3 uses ~5-6 GB RAM; without this the server returns 503
+    # Ollama + llama3.1:8b uses ~5-6 GB RAM; without this the server returns 503
     env["CRITICAL_RAM_PERCENT"] = "92.0"
     return env
 

@@ -57,6 +57,10 @@ To prevent unauthorized blackboard updates, every communication within the inter
    ```bash
    ollama pull llama3.1:8b
    ```
+3. **Security Tools (Kavach)**:
+   - **nmap**: `brew install nmap` or `apt-get install nmap`
+   - **subfinder**: `go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest`
+   - **nuclei**: `go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest`
 
 ### 1. Installation
 Clone the repository and install the dependencies:

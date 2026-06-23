@@ -1,0 +1,52 @@
+{
+  "report_id": "KAVACH-1782220604",
+  "target": "internal-portal.corp.closeai.com",
+  "generated_at": "2026-06-23T13:16:44.296770+00:00",
+  "executive_summary": "Security assessment completed. Please review critical findings.",
+  "reconnaissance_summary": {
+    "status": "COMPLETED",
+    "target": "internal-portal.corp.closeai.com",
+    "discovered_assets": [
+      "api.internal-portal.corp.closeai.com",
+      "dev.internal-portal.corp.closeai.com",
+      "admin.internal-portal.corp.closeai.com"
+    ],
+    "open_ports": [
+      80,
+      443,
+      22,
+      3306
+    ],
+    "risk_score": "MEDIUM"
+  },
+  "vulnerabilities_found": [
+    {
+      "type": "EXPOSED_SERVICE",
+      "severity": "HIGH",
+      "description": "MySQL port 3306 is exposed to the public internet.",
+      "asset": "internal-portal.corp.closeai.com"
+    },
+    {
+      "type": "WEAK_CONFIG",
+      "severity": "CRITICAL",
+      "description": "Admin panel exposed without IP restrictions on admin.internal-portal.corp.closeai.com.",
+      "asset": "admin.internal-portal.corp.closeai.com"
+    }
+  ],
+  "exploitation_results": [
+    {
+      "asset": "internal-portal.corp.closeai.com",
+      "status": "BLOCKED_BY_POLICY",
+      "reason": "Human approval missing for high-risk exploit."
+    },
+    {
+      "asset": "admin.internal-portal.corp.closeai.com",
+      "status": "BLOCKED_BY_POLICY",
+      "reason": "Human approval missing for high-risk exploit."
+    }
+  ],
+  "remediation_recommendations": [
+    "Restrict access to internal-portal.corp.closeai.com using security groups/firewall rules. Implement VPN/Zero Trust access.",
+    "Audit configuration on admin.internal-portal.corp.closeai.com. Enforce MFA and IP whitelisting for admin interfaces."
+  ]
+}

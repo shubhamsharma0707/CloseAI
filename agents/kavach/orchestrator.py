@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 load_dotenv(os.path.join(_ROOT, ".env"), override=False)
 
 # Import sub-agents
+from authorization.scope_guard import ScopeGuard
 from phase_1_recon.agent_kavach_recon import ReconAgent
 from phase_2_vuln_scan.agent_kavach_vuln_scan import VulnScanAgent
 from phase_3_pentest.agent_kavach_pentest import PentestAgent
@@ -27,6 +28,7 @@ logger = logging.getLogger("Kavach.CISO_Orchestrator")
 class KavachOrchestrator:
     def __init__(self):
         logger.info("🛡️ Initializing Kavach Master Security Orchestrator...")
+        self.scope_guard = ScopeGuard()
         self.agent_recon = ReconAgent()
         self.agent_vuln_scan = VulnScanAgent()
         self.agent_pentest = PentestAgent()
@@ -96,6 +98,13 @@ class KavachOrchestrator:
 
         if target == "Unknown":
             logger.error("🛑 Cannot proceed without a valid target. Aborting workflow.")
+            return
+
+        # PHASE 0: AUTHORIZATION & SCOPE GUARD
+        logger.info("\n>>> PHASE 0: AUTHORIZATION & SCOPE GUARD")
+        guard_result = self.scope_guard.check(target, scan_type)
+        if not guard_result.allowed:
+            logger.error(f"🛑 Workflow aborted by Scope Guard. Reason: {guard_result.reason}")
             return
 
         # PHASE 1: RECONNAISSANCE

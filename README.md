@@ -55,7 +55,7 @@ To prevent unauthorized blackboard updates, every communication within the inter
 1. **Python 3.10+**
 2. **Ollama**: Install [Ollama](https://ollama.com) and pull the `llama3.1:8b` model:
    ```bash
-   ollama pull llama3.1:8b:latest
+   ollama pull llama3.1:8b
    ```
 
 ### 1. Installation

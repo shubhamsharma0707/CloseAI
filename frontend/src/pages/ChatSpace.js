@@ -17,8 +17,8 @@ export class ChatSpace {
         </div>
         
         <div class="chat-input-area" style="animation: fadeSlideUp 0.6s ease 0.2s both;">
-          <input type="text" id="chat-input" class="input-field" placeholder="Enter your instructions for the agents..." autocomplete="off" />
-          <button class="btn-primary" id="chat-send" style="padding: 0.5rem 1.5rem;">
+          <input type="text" id="chat-input" class="input-field" placeholder="Message RISHI Orchestrator..." autocomplete="off" />
+          <button class="btn-primary" id="chat-send" style="padding: 0.5rem 1.5rem; border-radius: 8px;">
             Send
           </button>
         </div>
@@ -31,12 +31,19 @@ export class ChatSpace {
 
   renderMessages() {
     return this.messages.map((msg, idx) => `
-      <div class="chat-message ${msg.sender} reveal" data-delay="${idx * 0.1}s">
-        <span style="font-size: 0.7rem; color: var(--text-muted); padding: 0 0.5rem;">
-          ${msg.sender === 'agent' ? 'RISHI Orchestrator' : 'You'}
-        </span>
-        <div class="chat-bubble">
-          ${msg.text}
+      <div class="chat-message ${msg.sender} reveal is-visible">
+        ${msg.sender === 'agent' ? `
+          <div class="chat-avatar bot-avatar">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2a2 2 0 0 1 2 2c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2zm0 14a2 2 0 0 1 2 2c0 1.1-.9 2-2 2s-2-.9-2-2 .9-2 2-2zM4.93 4.93a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83 2 2 0 0 1-2.83-2.83zm11.31 11.31a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83 2 2 0 0 1-2.83-2.83zM2 12a2 2 0 0 1 2-2c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2zm16 0a2 2 0 0 1 2-2c1.1 0 2 .9 2 2s-.9 2-2 2-2-.9-2-2zM4.93 19.07a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0 2 2 0 0 1-2.83 2.83zm11.31-11.31a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0 2 2 0 0 1-2.83 2.83z"/></svg>
+          </div>
+        ` : ''}
+        <div class="chat-content-wrapper">
+          <div class="chat-sender-name">
+            ${msg.sender === 'agent' ? 'RISHI Orchestrator' : 'You'}
+          </div>
+          <div class="chat-bubble">
+            ${msg.text.replace(/\n/g, '<br>')}
+          </div>
         </div>
       </div>
     `).join('');
@@ -58,15 +65,34 @@ export class ChatSpace {
       history.innerHTML = this.renderMessages();
       history.scrollTop = history.scrollHeight;
 
-      // Mock agent reply for now
+      // Disable input while typing
+      input.disabled = true;
+      btn.disabled = true;
+
+      // Mock agent streaming reply like GPT/Claude
       setTimeout(() => {
-        this.messages.push({ sender: 'agent', text: 'Initializing Chanakya Agents... <ul><li>Phase 1: Math and Ledger analysis starting.</li></ul>' });
-        history.innerHTML = this.renderMessages();
-        history.scrollTop = history.scrollHeight;
-        initScrollReveals();
-      }, 1000);
-      
-      initScrollReveals();
+        const fullText = "Initializing Chanakya Agents...\n\nPhase 1: Math and Ledger analysis starting.\nPhase 2: Verifying financial data structures...\nPhase 3: Ready for final execution and orchestration.";
+        const words = fullText.split(' ');
+        
+        const agentMsg = { sender: 'agent', text: '' };
+        this.messages.push(agentMsg);
+        
+        let i = 0;
+        const typingInterval = setInterval(() => {
+          agentMsg.text += (i === 0 ? '' : ' ') + words[i];
+          history.innerHTML = this.renderMessages();
+          history.scrollTop = history.scrollHeight;
+          i++;
+          
+          if (i === words.length) {
+            clearInterval(typingInterval);
+            input.disabled = false;
+            btn.disabled = false;
+            input.focus();
+            initScrollReveals();
+          }
+        }, 50);
+      }, 400);
     };
 
     btn.addEventListener('click', sendMessage);

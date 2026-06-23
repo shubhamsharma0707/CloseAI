@@ -781,6 +781,47 @@ app.add_middleware(
 # tool-call POSTs from agents are routed to the correct SSE session.
 app.mount("/messages", app=shared_sse_transport.handle_post_message)
 
+# ---------------------------------------------------------------------------
+# 11. KAVACH HMAC AUDIT TRAIL
+# ---------------------------------------------------------------------------
+class KavachAuditPayload(BaseModel):
+    agent_id: str
+    payload: str
+    timestamp: str
+    signature: str
+
+kavach_audit_hash = "GENESIS_HASH"
+audit_lock = asyncio.Lock()
+
+@app.post("/kavach/audit")
+async def kavach_audit_log(req: KavachAuditPayload):
+    global kavach_audit_hash
+    
+    expected_secret = os.getenv("AGENT_TOKEN_KAVACH_CORE", "default_kavach_secret").encode()
+    message = f"{req.payload}|{req.timestamp}".encode()
+    expected_sig = hmac.new(expected_secret, message, hashlib.sha256).hexdigest()
+    
+    if not hmac.compare_digest(req.signature, expected_sig):
+        raise HTTPException(status_code=401, detail="Invalid HMAC signature")
+        
+    async with audit_lock:
+        chain_data = f"{kavach_audit_hash}|{req.payload}|{req.timestamp}".encode()
+        new_hash = hashlib.sha256(chain_data).hexdigest()
+        
+        record = {
+            "timestamp": req.timestamp,
+            "agent_id": req.agent_id,
+            "payload": req.payload,
+            "prev_hash": kavach_audit_hash,
+            "hash": new_hash
+        }
+        kavach_audit_hash = new_hash
+        
+        with open("kavach_audit_ledger.jsonl", "a") as f:
+            f.write(json.dumps(record) + "\n")
+            
+    return {"status": "ok", "hash": new_hash}
+
 
 @app.get("/sse")
 async def connect_agent(

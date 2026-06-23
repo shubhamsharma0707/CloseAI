@@ -12,6 +12,7 @@ load_dotenv(os.path.join(_ROOT, ".env"), override=False)
 
 # Import sub-agents
 from authorization.scope_guard import ScopeGuard
+from authorization.audit_client import log_audit_event
 from phase_1_recon.agent_kavach_recon import ReconAgent
 from phase_2_vuln_scan.agent_kavach_vuln_scan import VulnScanAgent
 from phase_3_pentest.agent_kavach_pentest import PentestAgent
@@ -103,39 +104,57 @@ class KavachOrchestrator:
         # PHASE 0: AUTHORIZATION & SCOPE GUARD
         logger.info("\n>>> PHASE 0: AUTHORIZATION & SCOPE GUARD")
         guard_result = self.scope_guard.check(target, scan_type)
+        
+        log_audit_event("KavachOrchestrator", "PHASE_0_AUTH", {
+            "target": target,
+            "scan_type": scan_type,
+            "allowed": guard_result.allowed,
+            "reason": guard_result.reason
+        })
+        
         if not guard_result.allowed:
             logger.error(f"🛑 Workflow aborted by Scope Guard. Reason: {guard_result.reason}")
             return
 
         # PHASE 1: RECONNAISSANCE
+        log_audit_event("KavachOrchestrator", "PHASE_1_RECON_START", {"target": target})
         logger.info("\n>>> PHASE 1: RECONNAISSANCE")
         recon_data = await self.agent_recon.execute_recon(target)
+        log_audit_event("KavachOrchestrator", "PHASE_1_RECON_END", {"recon_data": recon_data})
         
         if scan_type == "RECON_ONLY":
             logger.info("Workflow complete. Scan type was RECON_ONLY.")
             return
 
         # PHASE 2: VULNERABILITY SCANNING
+        log_audit_event("KavachOrchestrator", "PHASE_2_VULNSCAN_START", {"target": target})
         logger.info("\n>>> PHASE 2: VULNERABILITY SCANNING")
         vuln_data = await self.agent_vuln_scan.scan_vulnerabilities(recon_data)
+        log_audit_event("KavachOrchestrator", "PHASE_2_VULNSCAN_END", {"vuln_data": vuln_data})
         
         pentest_data = {"status": "SKIPPED", "exploited": []}
 
         # PHASE 3: PENETRATION TESTING (with Human Approval lock)
         if scan_type == "FULL_PENTEST":
+            log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_START", {"target": target})
             logger.info("\n>>> PHASE 3: PENETRATION TESTING")
             pentest_data = await self.agent_pentest.run_exploit_simulation(
                 vulnerabilities=vuln_data.get("vulnerabilities", []),
                 auto_approve=auto_approve
             )
+            log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_END", {"pentest_data": pentest_data})
 
         # PHASE 4: REPORTING
+        log_audit_event("KavachOrchestrator", "PHASE_4_REPORTING_START", {"target": target})
         logger.info("\n>>> PHASE 4: REPORTING")
         report_data = await self.agent_reporting.generate_report(target, recon_data, vuln_data, pentest_data)
+        log_audit_event("KavachOrchestrator", "PHASE_4_REPORTING_END", {"report_data": report_data})
 
         # PHASE 5: RETESTING
+        log_audit_event("KavachOrchestrator", "PHASE_5_RETEST_START", {"target": target})
         logger.info("\n>>> PHASE 5: CONTINUOUS MONITORING & RETESTING")
         await self.agent_retest.verify_fixes(report_data.get("report_path", "unknown"))
+        log_audit_event("KavachOrchestrator", "PHASE_5_RETEST_END", {"target": target})
 
         logger.info("\n==================================================")
         logger.info("✅ KAVACH SECURITY WORKFLOW COMPLETE")

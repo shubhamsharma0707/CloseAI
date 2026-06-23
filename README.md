@@ -61,6 +61,11 @@ To prevent unauthorized blackboard updates, every communication within the inter
    - **nmap**: `brew install nmap` or `apt-get install nmap`
    - **subfinder**: `go install -v github.com/projectdiscovery/subfinder/v2/cmd/subfinder@latest`
    - **nuclei**: `go install -v github.com/projectdiscovery/nuclei/v3/cmd/nuclei@latest`
+4. **Python Dependencies**:
+   ```bash
+   pip install -r requirements.txt
+   pip install reportlab
+   ```
 
 ### 1. Installation
 Clone the repository and install the dependencies:

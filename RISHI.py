@@ -1295,6 +1295,139 @@ async def rate_limit_check(req: RateLimitCheckRequest):
     return {"allowed": True, "action": action, "engagement_id": eng_id}
 
 
+# ---------------------------------------------------------------------------
+# 15. KAVACH KILL SWITCH  (Feature Set B.2)
+#     A single authenticated endpoint that immediately halts all further phase
+#     execution and plugin invocation across every in-flight Kavach workflow.
+#
+#     This is a MANUAL emergency stop triggered by a human operator.
+#     Section B.3 (anomaly detection) is the automated counterpart.
+#
+#     Implementation:
+#       - Global boolean flag: kill_switch_active
+#       - GET  /kavach/kill-switch/status   → polled by kill_switch_client.py
+#         before every plugin execute() and PentestAgent.run_exploit_simulation()
+#       - POST /kavach/kill-switch/activate → authenticated (HMAC over payload),
+#         audited (who, when, why) — same pattern as engagement revocation
+#       - POST /kavach/kill-switch/deactivate → authenticated, audited
+#
+#     Activating/deactivating is itself a tamper-evident, audited action.
+#     The kill switch client (kill_switch_client.py) is fail-closed: if RISHI
+#     is unreachable it treats the switch as ACTIVE.
+# ---------------------------------------------------------------------------
+
+kill_switch_active: bool = False
+kill_switch_meta: dict = {
+    "active": False,
+    "activated_at": None,
+    "activated_by": None,
+    "reason": None,
+    "deactivated_at": None,
+    "deactivated_by": None,
+}
+kill_switch_lock = asyncio.Lock()
+
+
+class KillSwitchActionRequest(BaseModel):
+    operator_id: str      # identity of the human operator
+    reason: str           # mandatory reason string
+    payload: str          # canonical string that was HMAC-signed
+    timestamp: str        # ISO-8601 UTC
+    signature: str        # HMAC-SHA256 of "payload|timestamp" under AGENT_TOKEN_KAVACH_CORE
+
+
+def _verify_operator_signature(payload: str, timestamp: str, signature: str) -> bool:
+    """
+    Verifies a kill-switch action is authenticated.  Uses the same
+    AGENT_TOKEN_KAVACH_CORE secret as the audit ledger so no new
+    secret infrastructure is required.
+    """
+    secret = os.getenv("AGENT_TOKEN_KAVACH_CORE", "default_kavach_secret").encode()
+    message = f"{payload}|{timestamp}".encode()
+    expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
+@app.get("/kavach/kill-switch/status")
+async def kill_switch_status():
+    """
+    Polled by kill_switch_client.py before every plugin execute() call.
+    Intentionally unauthenticated reads — polling agents should not need
+    operator credentials for a safety check.
+    """
+    async with kill_switch_lock:
+        return dict(kill_switch_meta)
+
+
+@app.post("/kavach/kill-switch/activate")
+async def kill_switch_activate(req: KillSwitchActionRequest):
+    """
+    Human operator activates the kill switch.  Authenticated via HMAC.
+    Immediately sets kill_switch_active=True — the next poll from any
+    plugin or PentestAgent will see this and halt.
+    """
+    if not _verify_operator_signature(req.payload, req.timestamp, req.signature):
+        raise HTTPException(status_code=401, detail="Invalid operator HMAC signature")
+
+    async with kill_switch_lock:
+        global kill_switch_active
+        if kill_switch_active:
+            raise HTTPException(status_code=409, detail="Kill switch is already active")
+        kill_switch_active = True
+        now = datetime.now(timezone.utc).isoformat()
+        kill_switch_meta.update({
+            "active": True,
+            "activated_at": now,
+            "activated_by": req.operator_id,
+            "reason": req.reason,
+            "deactivated_at": None,
+            "deactivated_by": None,
+        })
+
+    await _write_approval_audit("KILL_SWITCH_ACTIVATED", {
+        "operator_id": req.operator_id,
+        "reason": req.reason,
+        "timestamp": kill_switch_meta["activated_at"],
+    })
+    logger.critical(
+        f"🚨 [KILL_SWITCH] ACTIVATED by '{req.operator_id}': {req.reason}"
+    )
+    return {"status": "ACTIVATED", "activated_at": kill_switch_meta["activated_at"]}
+
+
+@app.post("/kavach/kill-switch/deactivate")
+async def kill_switch_deactivate(req: KillSwitchActionRequest):
+    """
+    Human operator deactivates the kill switch.  Authenticated via HMAC.
+    Plugins and PentestAgent will resume normal operation on their next
+    kill-switch poll after this call returns.
+    """
+    if not _verify_operator_signature(req.payload, req.timestamp, req.signature):
+        raise HTTPException(status_code=401, detail="Invalid operator HMAC signature")
+
+    async with kill_switch_lock:
+        global kill_switch_active
+        if not kill_switch_active:
+            raise HTTPException(status_code=409, detail="Kill switch is not currently active")
+        kill_switch_active = False
+        now = datetime.now(timezone.utc).isoformat()
+        kill_switch_meta.update({
+            "active": False,
+            "deactivated_at": now,
+            "deactivated_by": req.operator_id,
+        })
+
+    await _write_approval_audit("KILL_SWITCH_DEACTIVATED", {
+        "operator_id": req.operator_id,
+        "reason": req.reason,
+        "timestamp": kill_switch_meta["deactivated_at"],
+    })
+    logger.info(
+        f"✅ [KILL_SWITCH] DEACTIVATED by '{req.operator_id}': {req.reason}"
+    )
+    return {"status": "DEACTIVATED", "deactivated_at": kill_switch_meta["deactivated_at"]}
+
+
 @app.get("/sse")
 async def connect_agent(
     request: Request,

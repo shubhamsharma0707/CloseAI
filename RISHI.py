@@ -1016,6 +1016,166 @@ async def decide_approval(approval_id: str, req: ApprovalDecision):
     return {"approval_id": approval_id, "status": new_status}
 
 
+# ---------------------------------------------------------------------------
+# 13. KAVACH ENGAGEMENT LIFECYCLE STORE  (Gap 3)
+#     RISHI becomes the single source of truth for engagements.
+#     ScopeGuard calls GET /kavach/engagements/{id} instead of reading a
+#     local flat file, so a REVOKED engagement takes effect immediately
+#     across all Kavach processes without a restart.
+#
+#     Endpoint summary:
+#       POST /kavach/engagements          — create engagement (admin only)
+#       GET  /kavach/engagements/{id}     — read (used by ScopeGuard.check())
+#       POST /kavach/engagements/{id}/revoke — revoke mid-flight
+# ---------------------------------------------------------------------------
+
+engagement_store: dict[str, dict] = {}
+engagement_store_lock = asyncio.Lock()
+ENGAGEMENT_LEDGER_FILE = os.path.join(os.path.dirname(__file__), "kavach_engagements.jsonl")
+
+
+class EngagementCreateRequest(BaseModel):
+    engagement_id: str
+    client: str
+    targets: list[str]
+    start_time: str           # ISO-8601
+    end_time: str             # ISO-8601
+    permitted_techniques: list[str]
+    authorized_approvers: list[str] = []   # reviewer_id strings allowed to sign decisions
+    destructive_testing_allowed: bool = False
+
+
+class EngagementRevokeRequest(BaseModel):
+    revocation_reason: str
+    revoking_admin: str
+
+
+def _persist_engagement(record: dict):
+    """Append the current engagement snapshot to the JSONL audit trail."""
+    try:
+        with open(ENGAGEMENT_LEDGER_FILE, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception as exc:
+        logger.error(f"[ENGAGEMENT] Failed to persist engagement record: {exc}")
+
+
+def _load_engagements_from_ledger():
+    """
+    Replay the engagement ledger on startup to reconstruct current state.
+    Last write for each engagement_id wins (append-only event log).
+    """
+    if not os.path.exists(ENGAGEMENT_LEDGER_FILE):
+        return
+    seen: dict[str, dict] = {}
+    try:
+        with open(ENGAGEMENT_LEDGER_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                seen[record["engagement_id"]] = record
+    except Exception as exc:
+        logger.error(f"[ENGAGEMENT] Failed to replay ledger: {exc}")
+        return
+    engagement_store.update(seen)
+    logger.info(f"[ENGAGEMENT] Loaded {len(seen)} engagement(s) from ledger.")
+
+
+# Replay on import so the store is warm before any request arrives.
+_load_engagements_from_ledger()
+
+
+@app.post("/kavach/engagements", status_code=201)
+async def create_engagement(req: EngagementCreateRequest):
+    """
+    Create or update a Kavach engagement.  Every write is:
+      - Appended to kavach_engagements.jsonl (tamper-evident, append-only)
+      - Logged to the HMAC audit ledger
+    """
+    async with engagement_store_lock:
+        if req.engagement_id in engagement_store:
+            raise HTTPException(status_code=409,
+                                detail=f"Engagement '{req.engagement_id}' already exists. "
+                                       "Revoke and recreate to update.")
+        now = datetime.now(timezone.utc).isoformat()
+        record = {
+            "engagement_id": req.engagement_id,
+            "client": req.client,
+            "targets": req.targets,
+            "start_time": req.start_time,
+            "end_time": req.end_time,
+            "permitted_techniques": req.permitted_techniques,
+            "authorized_approvers": req.authorized_approvers,
+            "destructive_testing_allowed": req.destructive_testing_allowed,
+            "status": "ACTIVE",
+            "version": 1,
+            "created_at": now,
+            "updated_at": now,
+            "revocation_reason": None,
+            "revoked_by": None,
+            "revoked_at": None,
+        }
+        engagement_store[req.engagement_id] = record
+        _persist_engagement(record)
+
+    await _write_approval_audit("ENGAGEMENT_CREATED", {
+        "engagement_id": req.engagement_id,
+        "client": req.client,
+        "targets": req.targets,
+    })
+    logger.info(f"[ENGAGEMENT] Created {req.engagement_id} for client '{req.client}'")
+    return {"engagement_id": req.engagement_id, "status": "ACTIVE"}
+
+
+@app.get("/kavach/engagements/{engagement_id}")
+async def get_engagement(engagement_id: str):
+    """
+    Primary endpoint consumed by ScopeGuard.check() on every Kavach action.
+    Returns full engagement detail including live status (ACTIVE | REVOKED).
+    """
+    async with engagement_store_lock:
+        record = engagement_store.get(engagement_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Engagement not found")
+    return record
+
+
+@app.post("/kavach/engagements/{engagement_id}/revoke")
+async def revoke_engagement(engagement_id: str, req: EngagementRevokeRequest):
+    """
+    Immediately revokes an engagement.  ScopeGuard will start denying
+    all checks for this engagement_id on the next request — no restart needed.
+    """
+    async with engagement_store_lock:
+        record = engagement_store.get(engagement_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Engagement not found")
+        if record["status"] == "REVOKED":
+            raise HTTPException(status_code=409, detail="Engagement is already revoked")
+
+        now = datetime.now(timezone.utc).isoformat()
+        record["status"] = "REVOKED"
+        record["revocation_reason"] = req.revocation_reason
+        record["revoked_by"] = req.revoking_admin
+        record["revoked_at"] = now
+        record["updated_at"] = now
+        record["version"] = record.get("version", 1) + 1
+        _persist_engagement(record)
+
+    await _write_approval_audit("ENGAGEMENT_REVOKED", {
+        "engagement_id": engagement_id,
+        "reason": req.revocation_reason,
+        "revoked_by": req.revoking_admin,
+    })
+    logger.warning(
+        f"[ENGAGEMENT] ⚠️  {engagement_id} REVOKED by '{req.revoking_admin}': "
+        f"{req.revocation_reason}"
+    )
+    return {"engagement_id": engagement_id, "status": "REVOKED",
+            "revoked_at": record["revoked_at"]}
+
+
 @app.get("/sse")
 async def connect_agent(
     request: Request,

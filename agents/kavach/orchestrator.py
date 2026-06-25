@@ -3,6 +3,7 @@ import logging
 import json
 import os
 import sys
+import httpx
 
 # ── Locate project root and load .env ──────────────
 _ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..")
@@ -26,6 +27,36 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - [%(levelname)s] - %(message)s'
 )
 logger = logging.getLogger("Kavach.CISO_Orchestrator")
+
+RISHI_BASE = os.getenv("RISHI_BASE_URL", "http://127.0.0.1:8000")
+
+async def _check_rate_limit(engagement_id: str, action_type: str) -> bool:
+    """
+    Returns True if the action is allowed, False if rate-limited.
+    Fail-closed: RISHI unreachable or unexpected error → deny.
+    """
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(
+                f"{RISHI_BASE}/kavach/rate-limit/check",
+                json={"engagement_id": engagement_id, "action_type": action_type},
+            )
+            if resp.status_code == 200:
+                return True
+            if resp.status_code == 429:
+                logger.warning(f"[⛔️ RATE_LIMIT] {action_type} for {engagement_id}: {resp.json().get('detail', 'limit exceeded')}")
+                log_audit_event("KavachOrchestrator", "RATE_LIMIT_DENIED", {
+                    "engagement_id": engagement_id, "action_type": action_type,
+                })
+                return False
+            logger.warning(f"[RATE_LIMIT] Unexpected {resp.status_code} — denying (fail-closed).")
+            return False
+    except Exception as exc:
+        logger.error(f"[RATE_LIMIT] RISHI unreachable: {exc} — denying (fail-closed).")
+        log_audit_event("KavachOrchestrator", "RATE_LIMIT_RISHI_UNREACHABLE", {
+            "engagement_id": engagement_id, "action_type": action_type,
+        })
+        return False
 
 class KavachOrchestrator:
     def __init__(self):
@@ -119,6 +150,9 @@ class KavachOrchestrator:
             return
 
         # PHASE 1: RECONNAISSANCE
+        if not await _check_rate_limit(guard_result.engagement_id or "ENG-UNKNOWN", "RECON"):
+            logger.error("⛔️ RECON rate limit exceeded — aborting workflow.")
+            return
         log_audit_event("KavachOrchestrator", "PHASE_1_RECON_START", {"target": target})
         logger.info("\n>>> PHASE 1: RECONNAISSANCE")
         recon_data = await self.agent_recon.execute_recon(target)
@@ -129,6 +163,9 @@ class KavachOrchestrator:
             return
 
         # PHASE 2: VULNERABILITY SCANNING
+        if not await _check_rate_limit(guard_result.engagement_id or "ENG-UNKNOWN", "VULN_SCAN"):
+            logger.error("⛔️ VULN_SCAN rate limit exceeded — aborting workflow.")
+            return
         log_audit_event("KavachOrchestrator", "PHASE_2_VULNSCAN_START", {"target": target})
         logger.info("\n>>> PHASE 2: VULNERABILITY SCANNING")
         vuln_data = await self.agent_vuln_scan.scan_vulnerabilities(recon_data)
@@ -149,15 +186,18 @@ class KavachOrchestrator:
 
         # PHASE 3: PENETRATION TESTING (with Human Approval lock)
         if scan_type == "FULL_PENTEST":
-            log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_START", {"target": target})
-            logger.info("\n>>> PHASE 3: PENETRATION TESTING")
-            pentest_data = await self.agent_pentest.run_exploit_simulation(
-                vulnerabilities=triaged_dicts,
-                auto_approve=auto_approve,
-                engagement_id=guard_result.engagement_id or "ENG-UNKNOWN",
-                destructive_testing_allowed=guard_result.destructive_testing_allowed,
-            )
-            log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_END", {"pentest_data": pentest_data})
+            if not await _check_rate_limit(guard_result.engagement_id or "ENG-UNKNOWN", "EXPLOIT"):
+                logger.error("⛔️ EXPLOIT rate limit exceeded — skipping pentest phase.")
+            else:
+                log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_START", {"target": target})
+                logger.info("\n>>> PHASE 3: PENETRATION TESTING")
+                pentest_data = await self.agent_pentest.run_exploit_simulation(
+                    vulnerabilities=triaged_dicts,
+                    auto_approve=auto_approve,
+                    engagement_id=guard_result.engagement_id or "ENG-UNKNOWN",
+                    destructive_testing_allowed=guard_result.destructive_testing_allowed,
+                )
+                log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_END", {"pentest_data": pentest_data})
 
         # PHASE 4: REPORTING
         log_audit_event("KavachOrchestrator", "PHASE_4_REPORTING_START", {"target": target})

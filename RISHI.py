@@ -1176,6 +1176,125 @@ async def revoke_engagement(engagement_id: str, req: EngagementRevokeRequest):
             "revoked_at": record["revoked_at"]}
 
 
+# ---------------------------------------------------------------------------
+# 14. KAVACH RATE LIMITING  (Feature Set B.1)
+#     Per-engagement and global rolling counters on recon/scan/exploit actions.
+#     The orchestrator consults POST /kavach/rate-limit/check before each
+#     phase — the same pattern as ScopeGuard.check_async() so this feels like
+#     a sibling gate, not a bolt-on.
+#
+#     Config (all via .env):
+#       RATE_LIMIT_SCANS_PER_ENGAGEMENT_PER_HOUR   (default: 50)
+#       RATE_LIMIT_EXPLOITS_PER_HOUR_GLOBAL        (default: 20)
+#       RATE_LIMIT_RECON_PER_ENGAGEMENT_PER_HOUR   (default: 100)
+#
+#     On breach: deny the action, write RATE_LIMIT_EXCEEDED audit event,
+#     return 429 with a clear reason — fail-closed, no silent queuing.
+# ---------------------------------------------------------------------------
+
+import time as _time
+
+_RATE_LIMIT_SCANS_PER_ENG    = int(os.getenv("RATE_LIMIT_SCANS_PER_ENGAGEMENT_PER_HOUR", "50"))
+_RATE_LIMIT_EXPLOITS_GLOBAL  = int(os.getenv("RATE_LIMIT_EXPLOITS_PER_HOUR_GLOBAL", "20"))
+_RATE_LIMIT_RECON_PER_ENG    = int(os.getenv("RATE_LIMIT_RECON_PER_ENGAGEMENT_PER_HOUR", "100"))
+_RATE_WINDOW_SECONDS         = 3600  # 1 hour rolling window
+
+# Each entry is a list of UNIX timestamps of recent actions
+rate_store: dict[str, list[float]] = {}
+rate_store_lock = asyncio.Lock()
+
+
+def _prune_window(timestamps: list[float], now: float) -> list[float]:
+    """Drop timestamps older than the rolling window."""
+    cutoff = now - _RATE_WINDOW_SECONDS
+    return [t for t in timestamps if t > cutoff]
+
+
+class RateLimitCheckRequest(BaseModel):
+    engagement_id: str
+    action_type: str   # RECON | VULN_SCAN | EXPLOIT
+
+
+@app.post("/kavach/rate-limit/check")
+async def rate_limit_check(req: RateLimitCheckRequest):
+    """
+    Kavach orchestrator calls this before starting each phase.
+    Returns 200 {"allowed": true} if under limits.
+    Returns 429 {"allowed": false, "reason": ...} on breach — caller must
+    abort the phase, not queue it silently.
+    """
+    now = _time.time()
+    action = req.action_type.upper()
+    eng_id = req.engagement_id
+
+    async with rate_store_lock:
+        # --- Per-engagement counters ---
+        eng_scan_key  = f"eng:{eng_id}:scan"
+        eng_recon_key = f"eng:{eng_id}:recon"
+
+        rate_store.setdefault(eng_scan_key, [])
+        rate_store.setdefault(eng_recon_key, [])
+        rate_store["global:exploit"] = rate_store.get("global:exploit", [])
+
+        # Prune old entries
+        rate_store[eng_scan_key]     = _prune_window(rate_store[eng_scan_key], now)
+        rate_store[eng_recon_key]    = _prune_window(rate_store[eng_recon_key], now)
+        rate_store["global:exploit"] = _prune_window(rate_store["global:exploit"], now)
+
+        # Check limits
+        if action == "RECON":
+            count = len(rate_store[eng_recon_key])
+            if count >= _RATE_LIMIT_RECON_PER_ENG:
+                detail = (
+                    f"Rate limit exceeded: engagement {eng_id} has performed "
+                    f"{count}/{_RATE_LIMIT_RECON_PER_ENG} RECON actions in the last hour."
+                )
+                await _write_approval_audit("RATE_LIMIT_EXCEEDED", {
+                    "engagement_id": eng_id, "action": action,
+                    "count": count, "limit": _RATE_LIMIT_RECON_PER_ENG,
+                })
+                logger.warning(f"[RATE_LIMIT] {detail}")
+                raise HTTPException(status_code=429, detail=detail)
+            rate_store[eng_recon_key].append(now)
+
+        elif action in ("VULN_SCAN", "SCAN"):
+            count = len(rate_store[eng_scan_key])
+            if count >= _RATE_LIMIT_SCANS_PER_ENG:
+                detail = (
+                    f"Rate limit exceeded: engagement {eng_id} has performed "
+                    f"{count}/{_RATE_LIMIT_SCANS_PER_ENG} SCAN actions in the last hour."
+                )
+                await _write_approval_audit("RATE_LIMIT_EXCEEDED", {
+                    "engagement_id": eng_id, "action": action,
+                    "count": count, "limit": _RATE_LIMIT_SCANS_PER_ENG,
+                })
+                logger.warning(f"[RATE_LIMIT] {detail}")
+                raise HTTPException(status_code=429, detail=detail)
+            rate_store[eng_scan_key].append(now)
+
+        elif action == "EXPLOIT":
+            count = len(rate_store["global:exploit"])
+            if count >= _RATE_LIMIT_EXPLOITS_GLOBAL:
+                detail = (
+                    f"Global exploit rate limit exceeded: "
+                    f"{count}/{_RATE_LIMIT_EXPLOITS_GLOBAL} EXPLOIT actions in the last hour."
+                )
+                await _write_approval_audit("RATE_LIMIT_EXCEEDED", {
+                    "engagement_id": eng_id, "action": action,
+                    "count": count, "limit": _RATE_LIMIT_EXPLOITS_GLOBAL,
+                })
+                logger.warning(f"[RATE_LIMIT] {detail}")
+                raise HTTPException(status_code=429, detail=detail)
+            rate_store["global:exploit"].append(now)
+
+        else:
+            logger.warning(f"[RATE_LIMIT] Unknown action type '{action}' — denying (fail-closed).")
+            raise HTTPException(status_code=400, detail=f"Unknown action_type '{action}'. Must be RECON|VULN_SCAN|EXPLOIT.")
+
+    logger.debug(f"[RATE_LIMIT] {action} allowed for {eng_id}.")
+    return {"allowed": True, "action": action, "engagement_id": eng_id}
+
+
 @app.get("/sse")
 async def connect_agent(
     request: Request,

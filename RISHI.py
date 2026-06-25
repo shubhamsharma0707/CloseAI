@@ -1428,6 +1428,159 @@ async def kill_switch_deactivate(req: KillSwitchActionRequest):
     return {"status": "DEACTIVATED", "deactivated_at": kill_switch_meta["deactivated_at"]}
 
 
+# ---------------------------------------------------------------------------
+# 16. KAVACH ANOMALY DETECTION  (Feature Set B.3)
+#     Lightweight, explainable heuristics that flag unusual Kavach behavior
+#     for human review — NOT a black-box ML model. Every heuristic is a
+#     named, threshold-based rule with documented inputs so the audit trail
+#     is fully understandable to a reviewer.
+#
+#     Heuristics:
+#       1. Scan velocity: single engagement scanning far more distinct assets
+#          than its rolling historical baseline (ANOMALY_SCAN_VELOCITY_THRESHOLD)
+#       2. Approval-rate: unusually high rate of HIGH/CRITICAL findings per hour
+#          per engagement (ANOMALY_APPROVAL_RATE_THRESHOLD)
+#       3. Plugin failure rate: plugin error rate far above historical baseline
+#          over a 100-invocation window (ANOMALY_PLUGIN_FAILURE_RATE_THRESHOLD)
+#
+#     On any anomaly: ANOMALY_DETECTED audit event + create pending approval
+#     via the existing approval infrastructure so a human explicitly clears
+#     it before the workflow continues.
+#
+#     Thresholds — all configurable via .env:
+#       ANOMALY_SCAN_VELOCITY_THRESHOLD       (default: 20 distinct assets/hour)
+#       ANOMALY_APPROVAL_RATE_THRESHOLD       (default: 10 HIGH/CRITICAL/hour)
+#       ANOMALY_PLUGIN_FAILURE_RATE_THRESHOLD (default: 0.40 = 40%)
+# ---------------------------------------------------------------------------
+
+_ANOMALY_SCAN_VELOCITY    = int(os.getenv("ANOMALY_SCAN_VELOCITY_THRESHOLD", "20"))
+_ANOMALY_APPROVAL_RATE    = int(os.getenv("ANOMALY_APPROVAL_RATE_THRESHOLD", "10"))
+_ANOMALY_PLUGIN_FAIL_RATE = float(os.getenv("ANOMALY_PLUGIN_FAILURE_RATE_THRESHOLD", "0.40"))
+
+# Per-engagement rolling stores
+_anomaly_scan_assets:    dict[str, list[str]]  = {}
+_anomaly_approval_times: dict[str, list[float]] = {}
+_plugin_invocations:     dict[str, list[bool]]  = {}
+_anomaly_store_lock = asyncio.Lock()
+
+
+class AnomalyRecordRequest(BaseModel):
+    engagement_id: str
+    event_type: str       # SCAN_ASSET | APPROVAL_REQUEST | PLUGIN_RESULT
+    asset: Optional[str] = None
+    severity: Optional[str] = None
+    plugin_name: Optional[str] = None
+    success: Optional[bool] = None
+
+
+async def _create_anomaly_approval(engagement_id: str, heuristic: str, values: dict) -> str:
+    """Creates a pending approval via existing approval infrastructure."""
+    approval_id = secrets.token_hex(8)
+    now = datetime.now(timezone.utc).isoformat()
+    record = {
+        "approval_id": approval_id,
+        "engagement_id": engagement_id,
+        "target": f"anomaly:{heuristic}",
+        "scan_type": "ANOMALY_REVIEW",
+        "severity": "HIGH",
+        "reason": f"Anomaly heuristic '{heuristic}' triggered. Human review required.",
+        "values": values,
+        "status": "PENDING",
+        "created_at": now,
+        "reviews": [],
+    }
+    async with approval_lock:
+        pending_approvals[approval_id] = record
+    await _write_approval_audit("ANOMALY_APPROVAL_CREATED", {
+        "approval_id": approval_id, "engagement_id": engagement_id,
+        "heuristic": heuristic, "values": values,
+    })
+    logger.warning(f"[ANOMALY] Created pending approval {approval_id} for '{heuristic}' on {engagement_id}")
+    return approval_id
+
+
+@app.post("/kavach/anomaly/record")
+async def anomaly_record(req: AnomalyRecordRequest):
+    """
+    Called by the orchestrator after phase events so RISHI checks heuristics inline.
+    Returns any anomaly flags detected.
+    """
+    detected_anomalies: list[dict] = []
+    now = _time.time()
+
+    async with _anomaly_store_lock:
+        eng_id = req.engagement_id
+
+        if req.event_type == "SCAN_ASSET" and req.asset:
+            ts_key = f"anomaly_scan_ts:{eng_id}"
+            rate_store[ts_key] = _prune_window(rate_store.get(ts_key, []), now)
+            rate_store[ts_key].append(now)
+            _anomaly_scan_assets.setdefault(eng_id, [])
+            if req.asset not in _anomaly_scan_assets[eng_id]:
+                _anomaly_scan_assets[eng_id].append(req.asset)
+            hourly_count = len(rate_store[ts_key])
+            if hourly_count > _ANOMALY_SCAN_VELOCITY:
+                vals = {"distinct_assets": len(_anomaly_scan_assets[eng_id]),
+                        "hourly_scans": hourly_count, "threshold": _ANOMALY_SCAN_VELOCITY}
+                await _write_approval_audit("ANOMALY_DETECTED",
+                    {"heuristic": "SCAN_VELOCITY", "engagement_id": eng_id, **vals})
+                aid = await _create_anomaly_approval(eng_id, "SCAN_VELOCITY", vals)
+                detected_anomalies.append({"heuristic": "SCAN_VELOCITY", "values": vals, "approval_id": aid})
+                logger.warning(f"[ANOMALY] SCAN_VELOCITY: {hourly_count}/hr > {_ANOMALY_SCAN_VELOCITY}")
+
+        elif req.event_type == "APPROVAL_REQUEST" and req.severity in ("HIGH", "CRITICAL"):
+            ts_key = f"anomaly_approval:{eng_id}"
+            rate_store[ts_key] = _prune_window(rate_store.get(ts_key, []), now)
+            rate_store[ts_key].append(now)
+            count = len(rate_store[ts_key])
+            if count > _ANOMALY_APPROVAL_RATE:
+                vals = {"hourly_high_critical_approvals": count,
+                        "threshold": _ANOMALY_APPROVAL_RATE, "severity": req.severity}
+                await _write_approval_audit("ANOMALY_DETECTED",
+                    {"heuristic": "APPROVAL_RATE", "engagement_id": eng_id, **vals})
+                aid = await _create_anomaly_approval(eng_id, "APPROVAL_RATE", vals)
+                detected_anomalies.append({"heuristic": "APPROVAL_RATE", "values": vals, "approval_id": aid})
+                logger.warning(f"[ANOMALY] APPROVAL_RATE: {count}/hr > {_ANOMALY_APPROVAL_RATE}")
+
+        elif req.event_type == "PLUGIN_RESULT" and req.plugin_name and req.success is not None:
+            p_key = req.plugin_name
+            _plugin_invocations.setdefault(p_key, [])
+            _plugin_invocations[p_key].append(req.success)
+            if len(_plugin_invocations[p_key]) > 100:
+                _plugin_invocations[p_key] = _plugin_invocations[p_key][-100:]
+            window = _plugin_invocations[p_key]
+            if len(window) >= 10:
+                fail_rate = sum(1 for s in window if not s) / len(window)
+                if fail_rate >= _ANOMALY_PLUGIN_FAIL_RATE:
+                    vals = {"plugin": p_key, "failure_rate": round(fail_rate, 3),
+                            "sample_size": len(window), "threshold": _ANOMALY_PLUGIN_FAIL_RATE}
+                    await _write_approval_audit("ANOMALY_DETECTED",
+                        {"heuristic": "PLUGIN_FAILURE_RATE", "engagement_id": eng_id, **vals})
+                    aid = await _create_anomaly_approval(eng_id, "PLUGIN_FAILURE_RATE", vals)
+                    detected_anomalies.append({
+                        "heuristic": "PLUGIN_FAILURE_RATE", "values": vals, "approval_id": aid})
+                    logger.warning(f"[ANOMALY] PLUGIN_FAILURE_RATE: {fail_rate:.1%} > {_ANOMALY_PLUGIN_FAIL_RATE:.0%}")
+
+    return {"anomalies_detected": len(detected_anomalies), "anomalies": detected_anomalies}
+
+
+@app.get("/kavach/anomaly/status/{engagement_id}")
+async def anomaly_status(engagement_id: str):
+    """Returns pending anomaly-review approvals for an engagement."""
+    async with approval_lock:
+        anomaly_approvals = [
+            v for v in pending_approvals.values()
+            if v.get("engagement_id") == engagement_id
+            and v.get("scan_type") == "ANOMALY_REVIEW"
+            and v.get("status") == "PENDING"
+        ]
+    return {
+        "engagement_id": engagement_id,
+        "pending_anomaly_reviews": len(anomaly_approvals),
+        "approvals": anomaly_approvals,
+    }
+
+
 @app.get("/sse")
 async def connect_agent(
     request: Request,

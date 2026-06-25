@@ -214,7 +214,10 @@ class KavachOrchestrator:
         # PHASE 5: RETESTING
         log_audit_event("KavachOrchestrator", "PHASE_5_RETEST_START", {"target": target})
         logger.info("\n>>> PHASE 5: CONTINUOUS MONITORING & RETESTING")
-        await self.agent_retest.verify_fixes(report_data.get("report_path", "unknown"))
+        await self.agent_retest.verify_fixes(
+            previous_report_path=report_data.get("report_path", "unknown"),
+            engagement_id=guard_result.engagement_id or "ENG-UNKNOWN",
+        )
         log_audit_event("KavachOrchestrator", "PHASE_5_RETEST_END", {"target": target})
 
         logger.info("\n==================================================")

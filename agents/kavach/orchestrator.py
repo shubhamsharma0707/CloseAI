@@ -13,6 +13,7 @@ load_dotenv(os.path.join(_ROOT, ".env"), override=False)
 # Import sub-agents
 from authorization.scope_guard import ScopeGuard
 from authorization.audit_client import log_audit_event
+from triage.triage_engine import TriageEngine
 from phase_1_recon.agent_kavach_recon import ReconAgent
 from phase_2_vuln_scan.agent_kavach_vuln_scan import VulnScanAgent
 from phase_3_pentest.agent_kavach_pentest import PentestAgent
@@ -30,6 +31,7 @@ class KavachOrchestrator:
     def __init__(self):
         logger.info("🛡️ Initializing Kavach Master Security Orchestrator...")
         self.scope_guard = ScopeGuard()
+        self.triage_engine = TriageEngine()
         self.agent_recon = ReconAgent()
         self.agent_vuln_scan = VulnScanAgent()
         self.agent_pentest = PentestAgent()
@@ -131,7 +133,18 @@ class KavachOrchestrator:
         logger.info("\n>>> PHASE 2: VULNERABILITY SCANNING")
         vuln_data = await self.agent_vuln_scan.scan_vulnerabilities(recon_data)
         log_audit_event("KavachOrchestrator", "PHASE_2_VULNSCAN_END", {"vuln_data": vuln_data})
-        
+
+        # PHASE 2.5: TRIAGE
+        log_audit_event("KavachOrchestrator", "PHASE_2_5_TRIAGE_START", {"target": target})
+        logger.info("\n>>> PHASE 2.5: TRIAGE & DEDUPLICATION")
+        triaged_findings = self.triage_engine.run(vuln_data)
+        triaged_dicts = [f.to_dict() for f in triaged_findings]
+        log_audit_event("KavachOrchestrator", "PHASE_2_5_TRIAGE_END", {
+            "finding_count": len(triaged_findings),
+            "severities": [f.severity for f in triaged_findings],
+        })
+        logger.info(f">>> TRIAGE: {len(triaged_findings)} findings after dedup/enrichment")
+
         pentest_data = {"status": "SKIPPED", "exploited": []}
 
         # PHASE 3: PENETRATION TESTING (with Human Approval lock)
@@ -139,15 +152,23 @@ class KavachOrchestrator:
             log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_START", {"target": target})
             logger.info("\n>>> PHASE 3: PENETRATION TESTING")
             pentest_data = await self.agent_pentest.run_exploit_simulation(
-                vulnerabilities=vuln_data.get("vulnerabilities", []),
-                auto_approve=auto_approve
+                vulnerabilities=triaged_dicts,
+                auto_approve=auto_approve,
+                engagement_id=guard_result.engagement_id or "ENG-UNKNOWN",
+                destructive_testing_allowed=guard_result.destructive_testing_allowed,
             )
             log_audit_event("KavachOrchestrator", "PHASE_3_PENTEST_END", {"pentest_data": pentest_data})
 
         # PHASE 4: REPORTING
         log_audit_event("KavachOrchestrator", "PHASE_4_REPORTING_START", {"target": target})
         logger.info("\n>>> PHASE 4: REPORTING")
-        report_data = await self.agent_reporting.generate_report(target, recon_data, vuln_data, pentest_data)
+        report_data = await self.agent_reporting.generate_report(
+            target=target,
+            recon_data=recon_data,
+            vuln_data={**vuln_data, "vulnerabilities": triaged_dicts},
+            pentest_data=pentest_data,
+            engagement_id=guard_result.engagement_id or "ENG-UNKNOWN",
+        )
         log_audit_event("KavachOrchestrator", "PHASE_4_REPORTING_END", {"report_data": report_data})
 
         # PHASE 5: RETESTING

@@ -368,3 +368,144 @@ class ReportingAgent:
             "engagement_id": engagement_id,
             "risk_posture": report["risk_posture"],
         }
+
+    # ------------------------------------------------------------------
+    # C.3 Trend Analysis — computed purely from persisted history,
+    #     no re-scanning required.
+    # ------------------------------------------------------------------
+
+    def generate_trend_summary(self, engagement_id: str) -> dict:
+        """
+        Read the engagement's report history JSONL and compute:
+          1. Open findings over time (timeline of total OPEN counts per report)
+          2. Mean time to remediation (MTTR) by severity
+          3. Recurrence rate (findings with status REGRESSED in any delta report)
+
+        All data comes from {engagement_id}_history.jsonl written by:
+          - ReportingAgent._persist_report_history()   (scan reports)
+          - RetestAgent.verify_fixes()                  (retest deltas)
+
+        Returns a dict suitable for logging / API response / embedding in a
+        management dashboard.  Does not require any network calls or re-scans.
+        """
+        history_path = os.path.join(self.history_dir, f"{engagement_id}_history.jsonl")
+        if not os.path.exists(history_path):
+            return {
+                "engagement_id": engagement_id,
+                "error": f"No history found for engagement {engagement_id}",
+            }
+
+        records: list[dict] = []
+        try:
+            with open(history_path, "r") as fh:
+                for line in fh:
+                    line = line.strip()
+                    if line:
+                        try:
+                            records.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            pass
+        except Exception as exc:
+            logger.error(f"[{self.name}] generate_trend_summary read error: {exc}")
+            return {"engagement_id": engagement_id, "error": str(exc)}
+
+        if not records:
+            return {"engagement_id": engagement_id, "error": "History file is empty"}
+
+        # ── 1. Open findings timeline ──────────────────────────────────────
+        timeline: list[dict] = []
+        for record in records:
+            if record.get("report_type") == "RETEST_DELTA":
+                continue   # Use scan reports for the timeline, not delta reports
+            open_count = sum(
+                1 for f in record.get("findings", [])
+                if f.get("status", "OPEN") == "OPEN"
+            )
+            timeline.append({
+                "report_id": record.get("report_id"),
+                "generated_at": record.get("generated_at"),
+                "open_findings": open_count,
+                "total_findings": len(record.get("findings", [])),
+            })
+
+        # ── 2. Mean time to remediation (MTTR) by severity ───────────────
+        # Match RESOLVED findings in delta reports back to their original
+        # scan timestamp to compute the time delta.
+        # Build: finding_id → {severity, first_seen_at}
+        finding_first_seen: dict[str, dict] = {}
+        for record in records:
+            if record.get("report_type") == "RETEST_DELTA":
+                continue
+            seen_at = record.get("generated_at", "")
+            for f in record.get("findings", []):
+                fid = f.get("finding_id")
+                if fid and fid not in finding_first_seen:
+                    finding_first_seen[fid] = {
+                        "severity": f.get("severity", "INFO"),
+                        "first_seen_at": seen_at,
+                    }
+
+        # Collect resolution times from delta reports
+        mttr_by_severity: dict[str, list[float]] = defaultdict(list)
+        for record in records:
+            if record.get("report_type") != "RETEST_DELTA":
+                continue
+            resolved_at = record.get("generated_at", "")
+            for f in record.get("findings", []):
+                if f.get("status") != "RESOLVED":
+                    continue
+                fid = f.get("finding_id")
+                if not fid or fid not in finding_first_seen:
+                    continue
+                first_info = finding_first_seen[fid]
+                try:
+                    t0 = datetime.fromisoformat(first_info["first_seen_at"].replace("Z", "+00:00"))
+                    t1 = datetime.fromisoformat(resolved_at.replace("Z", "+00:00"))
+                    delta_hours = (t1 - t0).total_seconds() / 3600.0
+                    if delta_hours >= 0:
+                        mttr_by_severity[first_info["severity"]].append(delta_hours)
+                except (ValueError, TypeError):
+                    pass
+
+        mttr_summary: dict[str, float | None] = {}
+        for sev in ("CRITICAL", "HIGH", "MEDIUM", "LOW", "INFO"):
+            times = mttr_by_severity.get(sev, [])
+            mttr_summary[sev] = round(sum(times) / len(times), 2) if times else None
+
+        # ── 3. Recurrence rate ────────────────────────────────────────────
+        regressed_ids: set[str] = set()
+        for record in records:
+            if record.get("report_type") != "RETEST_DELTA":
+                continue
+            for f in record.get("findings", []):
+                if f.get("status") == "REGRESSED" and f.get("finding_id"):
+                    regressed_ids.add(f["finding_id"])
+
+        total_unique_findings = len(finding_first_seen)
+        recurrence_rate = (
+            round(len(regressed_ids) / total_unique_findings, 3)
+            if total_unique_findings > 0 else 0.0
+        )
+
+        summary = {
+            "engagement_id": engagement_id,
+            "generated_at": datetime.now(timezone.utc).isoformat(),
+            "total_reports_in_history": len(records),
+            "open_findings_timeline": timeline,
+            "mean_time_to_remediation_hours_by_severity": mttr_summary,
+            "recurrence": {
+                "regressed_finding_ids": sorted(regressed_ids),
+                "regressed_count": len(regressed_ids),
+                "total_unique_findings": total_unique_findings,
+                "recurrence_rate": recurrence_rate,
+            },
+        }
+
+        logger.info(
+            f"[{self.name}] Trend summary for {engagement_id}: "
+            f"{len(timeline)} scan reports, "
+            f"{len(regressed_ids)} regressions, "
+            f"CRITICAL MTTR={mttr_summary.get('CRITICAL')}h"
+        )
+        return summary
+

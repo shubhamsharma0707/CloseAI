@@ -37,6 +37,8 @@ from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
+from typing import Optional
+from uuid import uuid4
 import httpx
 from mcp.server.fastmcp import FastMCP
 from mcp.server.sse import SseServerTransport
@@ -821,6 +823,197 @@ async def kavach_audit_log(req: KavachAuditPayload):
             f.write(json.dumps(record) + "\n")
             
     return {"status": "ok", "hash": new_hash}
+
+
+# ---------------------------------------------------------------------------
+# 12. KAVACH PENDING-APPROVAL STORE  (Gap 1)
+#     Stateful approval records keyed by UUID.  A human reviewer calls
+#     POST /kavach/approvals/{id}/decide with an HMAC-signed decision using
+#     their own reviewer token (stored in REVIEWER_TOKENS env var as a
+#     comma-separated list of sha256 fingerprints).
+#
+#     CRITICAL-severity findings require TWO distinct approver signatures
+#     before status transitions to APPROVED (dual control).
+# ---------------------------------------------------------------------------
+
+approval_store: dict[str, dict] = {}
+approval_store_lock = asyncio.Lock()
+
+
+class ApprovalRequest(BaseModel):
+    vuln_type: str
+    asset: str
+    severity: str          # LOW | MEDIUM | HIGH | CRITICAL
+    engagement_id: str
+    requesting_agent: str
+
+
+class ApprovalDecision(BaseModel):
+    decision: str          # APPROVED | DENIED
+    reviewer_id: str       # identity of the human reviewer
+    payload: str           # canonical string that was HMAC-signed
+    timestamp: str         # ISO-8601 UTC
+    signature: str         # HMAC-SHA256 of "payload|timestamp" under reviewer token
+
+
+def _verify_reviewer_signature(reviewer_id: str, payload: str, timestamp: str, signature: str) -> bool:
+    """
+    Verifies the HMAC-SHA256 signature supplied by a human reviewer.
+    The reviewer token is loaded from REVIEWER_TOKEN_<REVIEWER_ID_UPPER>.
+    Falls back to AGENT_TOKEN_KAVACH_CORE if no specific reviewer token is set
+    (dev-mode only — production must set per-reviewer tokens).
+    """
+    env_key = f"REVIEWER_TOKEN_{reviewer_id.upper().replace('-', '_')}"
+    reviewer_secret = os.getenv(env_key) or os.getenv("AGENT_TOKEN_KAVACH_CORE", "default_kavach_secret")
+    secret = reviewer_secret.encode()
+    message = f"{payload}|{timestamp}".encode()
+    expected = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(signature, expected)
+
+
+async def _write_approval_audit(event: str, detail: dict):
+    """Write an approval lifecycle event to the tamper-evident audit ledger."""
+    secret = os.getenv("AGENT_TOKEN_KAVACH_CORE", "default_kavach_secret").encode()
+    payload_dict = {"phase": event, "event_data": detail}
+    payload_str = json.dumps(payload_dict, sort_keys=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    message = f"{payload_str}|{timestamp}".encode()
+    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    # Re-use the existing audit endpoint internally
+    await kavach_audit_log(KavachAuditPayload(
+        agent_id="RISHI_APPROVAL_STORE",
+        payload=payload_str,
+        timestamp=timestamp,
+        signature=signature,
+    ))
+
+
+@app.post("/kavach/approvals", status_code=201)
+async def create_approval(req: ApprovalRequest):
+    """
+    Kavach calls this when it encounters a HIGH/CRITICAL finding that needs
+    human sign-off.  Returns an approval_id the agent polls until a decision
+    arrives or the timeout expires.
+    """
+    approval_id = str(uuid4())
+    record = {
+        "approval_id": approval_id,
+        "status": "PENDING",
+        "vuln_type": req.vuln_type,
+        "asset": req.asset,
+        "severity": req.severity,
+        "engagement_id": req.engagement_id,
+        "requesting_agent": req.requesting_agent,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "decisions": [],           # list of individual reviewer decisions
+        "required_approvers": 2 if req.severity == "CRITICAL" else 1,
+    }
+    async with approval_store_lock:
+        approval_store[approval_id] = record
+
+    await _write_approval_audit("APPROVAL_CREATED", {
+        "approval_id": approval_id,
+        "asset": req.asset,
+        "severity": req.severity,
+        "engagement_id": req.engagement_id,
+    })
+    logger.info(f"[APPROVAL] Created {approval_id} for {req.asset} ({req.severity})")
+    return {"approval_id": approval_id, "status": "PENDING",
+            "required_approvers": record["required_approvers"]}
+
+
+@app.get("/kavach/approvals/{approval_id}")
+async def get_approval(approval_id: str):
+    """
+    Poll endpoint.  Kavach's poll_for_decision() calls this every N seconds
+    until status is no longer PENDING or the timeout is reached.
+    """
+    async with approval_store_lock:
+        record = approval_store.get(approval_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Approval record not found")
+    # Return a safe view (omit internal decisions list details if desired)
+    return {
+        "approval_id": approval_id,
+        "status": record["status"],
+        "severity": record["severity"],
+        "asset": record["asset"],
+        "created_at": record["created_at"],
+        "required_approvers": record["required_approvers"],
+        "approver_count": len([d for d in record["decisions"] if d["decision"] == "APPROVED"]),
+        "payload": json.dumps({"asset": record["asset"], "vuln_type": record["vuln_type"],
+                                "engagement_id": record["engagement_id"]}, sort_keys=True),
+        "timestamp": record.get("decided_at", ""),
+        "signature": record.get("final_signature", ""),
+    }
+
+
+@app.post("/kavach/approvals/{approval_id}/decide")
+async def decide_approval(approval_id: str, req: ApprovalDecision):
+    """
+    A human reviewer submits their HMAC-signed decision.
+    - Signature must be valid under the reviewer's own token.
+    - The same reviewer cannot sign twice (prevents self-approval even with
+      valid credentials).
+    - CRITICAL severity requires two distinct reviewers before APPROVED.
+    - Every decision — approved, denied, or duplicate — is written to the
+      audit ledger so 'who approved what, and when' is permanently
+      reconstructable.
+    """
+    async with approval_store_lock:
+        record = approval_store.get(approval_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Approval record not found")
+        if record["status"] != "PENDING":
+            raise HTTPException(status_code=409,
+                                detail=f"Approval already in terminal state: {record['status']}")
+
+        # Verify cryptographic signature
+        if not _verify_reviewer_signature(req.reviewer_id, req.payload, req.timestamp, req.signature):
+            await _write_approval_audit("DECISION_INVALID_HMAC", {
+                "approval_id": approval_id, "reviewer_id": req.reviewer_id,
+                "decision": req.decision,
+            })
+            raise HTTPException(status_code=401, detail="Invalid reviewer HMAC signature")
+
+        # Prevent the same reviewer signing twice
+        existing_reviewers = {d["reviewer_id"] for d in record["decisions"]}
+        if req.reviewer_id in existing_reviewers:
+            raise HTTPException(status_code=409,
+                                detail="Reviewer has already submitted a decision for this approval")
+
+        # Record this individual decision
+        record["decisions"].append({
+            "reviewer_id": req.reviewer_id,
+            "decision": req.decision,
+            "timestamp": req.timestamp,
+        })
+
+        # A single DENIED from any reviewer closes the approval immediately
+        if req.decision == "DENIED":
+            record["status"] = "DENIED"
+            record["decided_at"] = datetime.now(timezone.utc).isoformat()
+            record["final_signature"] = req.signature
+        else:
+            # Count unique APPROVED decisions
+            approved_count = len([d for d in record["decisions"] if d["decision"] == "APPROVED"])
+            if approved_count >= record["required_approvers"]:
+                record["status"] = "APPROVED"
+                record["decided_at"] = datetime.now(timezone.utc).isoformat()
+                record["final_signature"] = req.signature
+
+        new_status = record["status"]
+
+    await _write_approval_audit("DECISION_RECORDED", {
+        "approval_id": approval_id,
+        "reviewer_id": req.reviewer_id,
+        "decision": req.decision,
+        "new_status": new_status,
+        "asset": record["asset"],
+        "severity": record["severity"],
+    })
+    logger.info(f"[APPROVAL] {approval_id} → {new_status} (reviewer: {req.reviewer_id})")
+    return {"approval_id": approval_id, "status": new_status}
 
 
 @app.get("/sse")

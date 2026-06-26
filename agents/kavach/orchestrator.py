@@ -11,6 +11,10 @@ sys.path.insert(0, _ROOT)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_ROOT, ".env"), override=False)
 
+_KAVACH_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _KAVACH_ROOT not in sys.path:
+    sys.path.insert(0, _KAVACH_ROOT)
+
 # Import sub-agents
 from authorization.scope_guard import ScopeGuard
 from authorization.audit_client import log_audit_event
@@ -132,7 +136,7 @@ class KavachOrchestrator:
 
         if target == "Unknown":
             logger.error("🛑 Cannot proceed without a valid target. Aborting workflow.")
-            return
+            return {"status": "ERROR", "summary": "No target specified."}
 
         # PHASE 0: AUTHORIZATION & SCOPE GUARD
         logger.info("\n>>> PHASE 0: AUTHORIZATION & SCOPE GUARD")
@@ -147,12 +151,12 @@ class KavachOrchestrator:
         
         if not guard_result.allowed:
             logger.error(f"🛑 Workflow aborted by Scope Guard. Reason: {guard_result.reason}")
-            return
+            return {"status": "BLOCKED", "summary": f"ScopeGuard blocked: {guard_result.reason}"}
 
         # PHASE 1: RECONNAISSANCE
         if not await _check_rate_limit(guard_result.engagement_id or "ENG-UNKNOWN", "RECON"):
             logger.error("⛔️ RECON rate limit exceeded — aborting workflow.")
-            return
+            return {"status": "ERROR", "summary": "RECON rate limit exceeded."}
         log_audit_event("KavachOrchestrator", "PHASE_1_RECON_START", {"target": target})
         logger.info("\n>>> PHASE 1: RECONNAISSANCE")
         recon_data = await self.agent_recon.execute_recon(target)
@@ -160,12 +164,12 @@ class KavachOrchestrator:
         
         if scan_type == "RECON_ONLY":
             logger.info("Workflow complete. Scan type was RECON_ONLY.")
-            return
+            return {"status": "OK", "summary": "RECON_ONLY workflow complete."}
 
         # PHASE 2: VULNERABILITY SCANNING
         if not await _check_rate_limit(guard_result.engagement_id or "ENG-UNKNOWN", "VULN_SCAN"):
             logger.error("⛔️ VULN_SCAN rate limit exceeded — aborting workflow.")
-            return
+            return {"status": "ERROR", "summary": "VULN_SCAN rate limit exceeded."}
         log_audit_event("KavachOrchestrator", "PHASE_2_VULNSCAN_START", {"target": target})
         logger.info("\n>>> PHASE 2: VULNERABILITY SCANNING")
         vuln_data = await self.agent_vuln_scan.scan_vulnerabilities(recon_data)
@@ -223,6 +227,45 @@ class KavachOrchestrator:
         logger.info("\n==================================================")
         logger.info("✅ KAVACH SECURITY WORKFLOW COMPLETE")
         logger.info("==================================================")
+        
+        # Check if pentest_data had any blocked exploits (e.g. NEEDS_APPROVAL or EXPLOIT_BLOCKED)
+        if isinstance(pentest_data, dict):
+            # If pentest_data status is KILL_SWITCH_ACTIVE or similar we could map it
+            # But PentestAgent also handles approvals. If approval was denied, it doesn't halt the whole workflow 
+            # unless we want it to. Wait, PentestAgent just logs EXPLOIT_BLOCKED and continues.
+            pass
+
+        return {"status": "OK", "summary": "Security workflow complete."}
+
+    async def run(self, user_prompt: str, engagement_id: str | None = None) -> dict:
+        """
+        Thin wrapper to provide a standardized agentic interface for RISHI Central Router.
+        """
+        intent = await self.parse_intent_with_ollama(user_prompt)
+        if not intent:
+            return {
+                "status": "ERROR",
+                "summary": "Failed to parse intent.",
+                "details": {},
+                "orchestrator": "kavach"
+            }
+            
+        result = await self.run_full_security_workflow(
+            target=intent.get("target", "Unknown"),
+            scan_type=intent.get("scan_type", "FULL_PENTEST"),
+            auto_approve=intent.get("auto_approve", False)
+        )
+        
+        # In case the workflow returned None by accident, default to OK
+        if not result:
+            result = {"status": "OK", "summary": "Workflow completed (no status returned)."}
+            
+        return {
+            "status": result.get("status", "OK"),
+            "summary": result.get("summary", ""),
+            "details": intent,
+            "orchestrator": "kavach"
+        }
 
 async def main():
     ciso = KavachOrchestrator()

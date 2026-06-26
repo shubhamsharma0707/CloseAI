@@ -2175,6 +2175,195 @@ async def chat_endpoint(req: ChatRequest):
             return {"response": "I'm sorry, I'm having trouble thinking right now. Please try again later."}
 
 
+# ---------------------------------------------------------------------------
+# 20. RISHI CENTRAL ROUTER (POST /ask)
+# ---------------------------------------------------------------------------
+class RouterDecision(BaseModel):
+    orchestrators: list[str]
+    sequence: str
+    reasoning: str
+
+class AskRequest(BaseModel):
+    user_prompt: str
+    session_id: Optional[str] = None
+    context: Optional[dict] = None
+
+router_sessions = {}
+
+async def _write_router_audit(event: str, detail: dict):
+    payload_str = json.dumps({"phase": event, "event_data": detail}, sort_keys=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    secret = os.getenv("AGENT_TOKEN_KAVACH_CORE", "default_kavach_secret").encode()
+    message = f"{payload_str}|{timestamp}".encode()
+    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    await kavach_audit_log(KavachAuditPayload(
+        agent_id="RISHI_CENTRAL_ROUTER",
+        payload=payload_str,
+        timestamp=timestamp,
+        signature=signature
+    ))
+
+async def classify_intent(user_prompt: str) -> RouterDecision:
+    system_prompt = """You are RISHI, a Central Routing AI.
+Analyze the user request and determine which orchestrator(s) should handle it.
+The available orchestrators are:
+- "chanakya": handles quantitative finance, tax calculation, ethical compliance, ESG reporting, and financial visualization.
+- "kavach": handles reconnaissance, vulnerability scanning, penetration testing, and security reporting.
+- "engineer": handles code generation, software design, local diffusion asset generation, and code deployment.
+
+You MUST respond ONLY with a valid JSON object matching this schema:
+{
+  "orchestrators": ["chanakya" | "kavach" | "engineer", ...],
+  "sequence": "single" | "sequential" | "parallel",
+  "reasoning": "one sentence — why these orchestrator(s)"
+}"""
+    try:
+        from ollama import AsyncClient
+        response = await AsyncClient().chat(model='llama3.1:8b', messages=[
+            {'role': 'system', 'content': system_prompt},
+            {'role': 'user', 'content': user_prompt}
+        ], format='json')
+        msg = response.get('message', None) if isinstance(response, dict) else None
+        if msg is not None:
+            content = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
+        else:
+            content = getattr(getattr(response, 'message', None), 'content', '')
+        
+        data = json.loads(content)
+        orchestrators = [o for o in data.get("orchestrators", []) if o in ["chanakya", "kavach", "engineer"]]
+        if not orchestrators:
+            orchestrators = ["chanakya"]
+        return RouterDecision(
+            orchestrators=orchestrators,
+            sequence=data.get("sequence", "single"),
+            reasoning=data.get("reasoning", "Fallback")
+        )
+    except Exception as e:
+        logger.error(f"Routing classification failed: {e}")
+        return RouterDecision(orchestrators=["chanakya"], sequence="single", reasoning="Fallback due to error")
+
+@app.post("/ask")
+async def rishi_ask(req: AskRequest):
+    logger.info(f"[ROUTER] /ask called with prompt: {req.user_prompt[:100]}...")
+    
+    decision = await classify_intent(req.user_prompt)
+    
+    await _write_router_audit("ROUTING_DECISION", {
+        "session_id": req.session_id,
+        "user_prompt": req.user_prompt[:500],
+        "orchestrators_selected": decision.orchestrators,
+        "sequence": decision.sequence,
+        "reasoning": decision.reasoning,
+    })
+    
+    context = req.context or {}
+    engagement_id = context.get("engagement_id") or context.get("workspace_id")
+    if req.session_id:
+        if req.session_id not in router_sessions:
+            router_sessions[req.session_id] = {}
+        sess = router_sessions[req.session_id]
+        if engagement_id:
+            sess["engagement_id"] = engagement_id
+        else:
+            engagement_id = sess.get("engagement_id")
+    
+    results = []
+    current_prompt = req.user_prompt
+    
+    from agents.chanakya.orchestrator import ChanakyaOrchestrator
+    from agents.kavach.orchestrator import KavachOrchestrator
+    from agents.engineer.orchestrator import EngineerOrchestrator
+    
+    orchestrator_map = {
+        "chanakya": ChanakyaOrchestrator,
+        "kavach": KavachOrchestrator,
+        "engineer": EngineerOrchestrator
+    }
+    
+    hops = 0
+    max_hops = 3
+    
+    for orch_name in decision.orchestrators:
+        if hops >= max_hops:
+            logger.warning("[ROUTER] Hard cap of 3 orchestrator calls reached.")
+            break
+            
+        orch_class = orchestrator_map.get(orch_name)
+        if not orch_class:
+            continue
+            
+        instance = orch_class()
+        
+        try:
+            logger.info(f"[ROUTER] Invoking {orch_name}...")
+            if orch_name == "kavach":
+                result = await instance.run(current_prompt, engagement_id=engagement_id)
+            elif orch_name == "engineer":
+                result = await instance.run(current_prompt, workspace_id=engagement_id)
+            else:
+                result = await instance.run(current_prompt, session_id=req.session_id)
+        except Exception as e:
+            logger.error(f"[ROUTER] Orchestrator {orch_name} crashed: {e}")
+            results.append({"orchestrator": orch_name, "status": "ERROR", "summary": f"Crash: {e}"})
+            break
+            
+        results.append(result)
+        hops += 1
+        
+        status = result.get("status")
+        if status in ("NEEDS_APPROVAL", "BLOCKED", "ERROR"):
+            logger.info(f"[ROUTER] Halting loop due to status {status} from {orch_name}.")
+            break
+            
+        if hops < len(decision.orchestrators) and hops < max_hops:
+            system_prompt = "You are a routing assistant. Combine the user's original request with the outcome of the previous step to form a clear instruction for the next step."
+            try:
+                from ollama import AsyncClient
+                prompt_text = f"Original: {req.user_prompt}\\nPrevious Step ({orch_name}) Output: {result.get('summary')}\\nFormulate the next instruction:"
+                resp = await AsyncClient().chat(model='llama3.1:8b', messages=[
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': prompt_text}
+                ])
+                msg = resp.get('message', None) if isinstance(resp, dict) else None
+                if msg is not None:
+                    current_prompt = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
+                else:
+                    current_prompt = getattr(getattr(resp, 'message', None), 'content', '')
+            except Exception as e:
+                logger.error(f"[ROUTER] Re-grounding failed: {e}")
+                pass 
+                
+    final_status = results[-1].get("status") if results else "ERROR"
+    if final_status in ("NEEDS_APPROVAL", "BLOCKED"):
+        final_summary = f"The operation was {final_status.lower()}: " + " | ".join([str(r.get("summary", "")) for r in results if r.get("status") == final_status])
+    elif final_status == "ERROR":
+        final_summary = "The operation encountered an error: " + " | ".join([str(r.get("summary", "")) for r in results if r.get("status") == "ERROR"])
+    else:
+        system_prompt = "You are RISHI, a Master AI. Synthesize the provided agent outputs into a cohesive final answer to the user. Be concise but complete."
+        outputs_text = json.dumps([r.get("summary") for r in results])
+        try:
+            from ollama import AsyncClient
+            resp = await AsyncClient().chat(model='llama3.1:8b', messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': f"Original prompt: {req.user_prompt}\\nOutputs:\\n{outputs_text}"}
+            ])
+            msg = resp.get('message', None) if isinstance(resp, dict) else None
+            if msg is not None:
+                final_summary = msg.get('content', '') if isinstance(msg, dict) else getattr(msg, 'content', '')
+            else:
+                final_summary = getattr(getattr(resp, 'message', None), 'content', '')
+        except Exception as e:
+            logger.error(f"[ROUTER] Synthesis failed: {e}")
+            final_summary = " | ".join([str(r.get("summary", "")) for r in results])
+
+    return {
+        "status": final_status,
+        "summary": final_summary,
+        "results": results,
+        "session_id": req.session_id,
+        "engagement_id": engagement_id
+    }
+
 if __name__ == "__main__":
     import uvicorn
     logger.info("Initializing RISHI Multi-Tenant Node Architecture.")

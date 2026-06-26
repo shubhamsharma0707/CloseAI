@@ -65,6 +65,17 @@ CRITICAL_RAM_PERCENT = float(os.getenv("CRITICAL_RAM_PERCENT", "85.0"))
 worker_cores = max(1, (os.cpu_count() or 4) - 2)
 process_pool = ProcessPoolExecutor(max_workers=worker_cores)
 
+# GPU / VRAM sequencing note for Engineer's GenerativeAI sub-agent:
+#   • GenerativeAI checks GPU VRAM via agents/engineer/generative/gpu_guard.py
+#     before invoking any local diffusion model — returns RESOURCE_CONSTRAINED
+#     (not a silent hang) if headroom is insufficient.
+#   • For local dev: do NOT run CoderAI test suites (npm test / pytest) at the
+#     same time as a GenerativeAI diffusion job — both are RAM-heavy and will
+#     compete for system memory alongside Ollama.
+#   • This is operational guidance (local dev scheduling), not a hard code gate,
+#     since the threshold varies by machine. The env var ENGINEER_MIN_FREE_VRAM_MB
+#     (default 4096 MB) tunes GenerativeAI's VRAM floor.
+
 # ---------------------------------------------------------------------------
 # 2. TOKEN STORE
 #    Load per-agent bearer tokens from the environment.
@@ -133,6 +144,23 @@ AGENT_REGISTRY: dict[str, dict] = {
     "agent_chanakya_adaptability": {
         "role": "regulatory_researcher",
         "allowed_tools": ["fetch_regulatory_updates", "read_blackboard", "write_blackboard"],
+    },
+    # ── Engineer Orchestrator & Sub-Agents ────────────────────────────────
+    # Engineer is the third orchestrator — sits alongside Chanakya and Kavach.
+    # Sub-agents expose no MCP tools of their own (they use REST/HTTP to RISHI
+    # for audit and approvals), but are registered here so their bearer tokens
+    # are pre-loaded and the auth middleware can validate their identities.
+    "agent_engineer_coder": {
+        "role": "engineer_coder",
+        "allowed_tools": [],   # CoderAI communicates via /engineer/* REST endpoints
+    },
+    "agent_engineer_designer": {
+        "role": "engineer_designer",
+        "allowed_tools": [],   # DesignerAI — Tier 0 output only, no MCP tools needed
+    },
+    "agent_engineer_generative": {
+        "role": "engineer_generative",
+        "allowed_tools": [],   # GenerativeAI — wraps local CLI, no MCP tools needed
     },
 }
 
@@ -1579,6 +1607,327 @@ async def anomaly_status(engagement_id: str):
         "pending_anomaly_reviews": len(anomaly_approvals),
         "approvals": anomaly_approvals,
     }
+
+
+# ---------------------------------------------------------------------------
+# 20. ENGINEER AUDIT LEDGER
+#     Mirrors /kavach/audit exactly — same HMAC-chained append-only log,
+#     same signing scheme.  Engineer agents use AGENT_TOKEN_ENGINEER_CORE
+#     (or their individual tokens) as the signing secret.
+#     Following the same numbered-section-comment convention.
+# ---------------------------------------------------------------------------
+
+engineer_audit_hash = "ENGINEER_GENESIS_HASH"
+engineer_audit_lock = asyncio.Lock()
+ENGINEER_AUDIT_LEDGER_FILE = os.path.join(os.path.dirname(__file__), "engineer_audit_ledger.jsonl")
+
+
+class EngineerAuditPayload(BaseModel):
+    agent_id: str
+    payload: str
+    timestamp: str
+    signature: str
+
+
+@app.post("/engineer/audit")
+async def engineer_audit_log(req: EngineerAuditPayload):
+    """
+    HMAC-verified audit event for Engineer sub-agents.
+    Mirrors POST /kavach/audit — same chain, separate ledger file.
+    """
+    global engineer_audit_hash
+
+    expected_secret = os.getenv("AGENT_TOKEN_ENGINEER_CODER", "default_engineer_secret").encode()
+    message = f"{req.payload}|{req.timestamp}".encode()
+    expected_sig = hmac.new(expected_secret, message, hashlib.sha256).hexdigest()
+
+    if not hmac.compare_digest(req.signature, expected_sig):
+        raise HTTPException(status_code=401, detail="Invalid Engineer HMAC signature")
+
+    async with engineer_audit_lock:
+        chain_data = f"{engineer_audit_hash}|{req.payload}|{req.timestamp}".encode()
+        new_hash = hashlib.sha256(chain_data).hexdigest()
+
+        record = {
+            "timestamp": req.timestamp,
+            "agent_id": req.agent_id,
+            "payload": req.payload,
+            "prev_hash": engineer_audit_hash,
+            "hash": new_hash,
+        }
+        engineer_audit_hash = new_hash
+
+        with open(ENGINEER_AUDIT_LEDGER_FILE, "a") as f:
+            f.write(json.dumps(record) + "\n")
+
+    return {"status": "ok", "hash": new_hash}
+
+
+# ---------------------------------------------------------------------------
+# 21. ENGINEER APPROVAL STORE
+#     Pending approvals for Engineer Tier 2+ actions.
+#     Reuses the same ApprovalRequest / ApprovalDecision models and
+#     _verify_reviewer_signature helper from Section 12.
+#     Separate store so Engineer approvals don't pollute Kavach's store.
+# ---------------------------------------------------------------------------
+
+engineer_approval_store: dict[str, dict] = {}
+engineer_approval_store_lock = asyncio.Lock()
+
+
+async def _write_engineer_approval_audit(event: str, detail: dict):
+    """Write an Engineer approval lifecycle event to the Engineer audit ledger."""
+    secret = os.getenv("AGENT_TOKEN_ENGINEER_CODER", "default_engineer_secret").encode()
+    payload_dict = {"phase": event, "event_data": detail}
+    payload_str = json.dumps(payload_dict, sort_keys=True)
+    timestamp = datetime.now(timezone.utc).isoformat()
+    message = f"{payload_str}|{timestamp}".encode()
+    signature = hmac.new(secret, message, hashlib.sha256).hexdigest()
+    await engineer_audit_log(EngineerAuditPayload(
+        agent_id="RISHI_ENGINEER_APPROVAL_STORE",
+        payload=payload_str,
+        timestamp=timestamp,
+        signature=signature,
+    ))
+
+
+@app.post("/engineer/approvals", status_code=201)
+async def create_engineer_approval(req: ApprovalRequest):
+    """
+    Engineer orchestrator calls this for Tier 2+ actions requiring human sign-off.
+    Same shape as POST /kavach/approvals — reuses ApprovalRequest model.
+    """
+    approval_id = str(uuid4())
+    record = {
+        "approval_id": approval_id,
+        "status": "PENDING",
+        "vuln_type": req.vuln_type,          # action_type for Engineer context
+        "asset": req.asset,                   # workspace path / CWD
+        "severity": req.severity,
+        "engagement_id": req.engagement_id,  # workspace_id for Engineer
+        "requesting_agent": req.requesting_agent,
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "decisions": [],
+        "required_approvers": 2 if req.severity == "CRITICAL" else 1,
+    }
+    async with engineer_approval_store_lock:
+        engineer_approval_store[approval_id] = record
+
+    await _write_engineer_approval_audit("ENGINEER_APPROVAL_CREATED", {
+        "approval_id": approval_id,
+        "asset": req.asset,
+        "severity": req.severity,
+        "engagement_id": req.engagement_id,
+    })
+    logger.info(f"[ENGINEER_APPROVAL] Created {approval_id} for {req.asset} ({req.severity})")
+    return {
+        "approval_id": approval_id,
+        "status": "PENDING",
+        "required_approvers": record["required_approvers"],
+    }
+
+
+@app.get("/engineer/approvals/{approval_id}")
+async def get_engineer_approval(approval_id: str):
+    """Poll endpoint for Engineer Tier 2 approval decisions."""
+    async with engineer_approval_store_lock:
+        record = engineer_approval_store.get(approval_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Engineer approval record not found")
+    return {
+        "approval_id": approval_id,
+        "status": record["status"],
+        "severity": record["severity"],
+        "asset": record["asset"],
+        "created_at": record["created_at"],
+        "required_approvers": record["required_approvers"],
+        "approver_count": len([d for d in record["decisions"] if d["decision"] == "APPROVED"]),
+        "payload": json.dumps({
+            "asset": record["asset"],
+            "vuln_type": record["vuln_type"],
+            "engagement_id": record["engagement_id"],
+        }, sort_keys=True),
+        "timestamp": record.get("decided_at", ""),
+        "signature": record.get("final_signature", ""),
+    }
+
+
+@app.post("/engineer/approvals/{approval_id}/decide")
+async def decide_engineer_approval(approval_id: str, req: ApprovalDecision):
+    """
+    Human reviewer submits HMAC-signed decision for an Engineer Tier 2 action.
+    Reuses ApprovalDecision model and _verify_reviewer_signature from Section 12.
+    Same dual-control semantics: single DENIED closes immediately; APPROVED
+    requires required_approvers distinct reviewers.
+    """
+    async with engineer_approval_store_lock:
+        record = engineer_approval_store.get(approval_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Engineer approval record not found")
+        if record["status"] != "PENDING":
+            raise HTTPException(status_code=409,
+                                detail=f"Approval already in terminal state: {record['status']}")
+
+        if not _verify_reviewer_signature(req.reviewer_id, req.payload, req.timestamp, req.signature):
+            await _write_engineer_approval_audit("ENGINEER_DECISION_INVALID_HMAC", {
+                "approval_id": approval_id, "reviewer_id": req.reviewer_id,
+            })
+            raise HTTPException(status_code=401, detail="Invalid reviewer HMAC signature")
+
+        existing_reviewers = {d["reviewer_id"] for d in record["decisions"]}
+        if req.reviewer_id in existing_reviewers:
+            raise HTTPException(status_code=409,
+                                detail="Reviewer has already submitted a decision for this approval")
+
+        record["decisions"].append({
+            "reviewer_id": req.reviewer_id,
+            "decision": req.decision,
+            "timestamp": req.timestamp,
+        })
+
+        if req.decision == "DENIED":
+            record["status"] = "DENIED"
+            record["decided_at"] = datetime.now(timezone.utc).isoformat()
+            record["final_signature"] = req.signature
+        else:
+            approved_count = len([d for d in record["decisions"] if d["decision"] == "APPROVED"])
+            if approved_count >= record["required_approvers"]:
+                record["status"] = "APPROVED"
+                record["decided_at"] = datetime.now(timezone.utc).isoformat()
+                record["final_signature"] = req.signature
+
+        new_status = record["status"]
+
+    await _write_engineer_approval_audit("ENGINEER_DECISION_RECORDED", {
+        "approval_id": approval_id,
+        "reviewer_id": req.reviewer_id,
+        "decision": req.decision,
+        "new_status": new_status,
+    })
+    logger.info(f"[ENGINEER_APPROVAL] {approval_id} → {new_status} (reviewer: {req.reviewer_id})")
+    return {"approval_id": approval_id, "status": new_status}
+
+
+# ---------------------------------------------------------------------------
+# 22. ENGINEER WORKSPACE AUTHORIZATION STORE
+#     Workspace records are the Engineer analogue of Kavach's engagement records.
+#     Same shape: an ID, an authorization scope, a list of allowed people,
+#     a revoke endpoint — same revocation mechanism, different domain (a
+#     repo/project instead of a pentest target).
+# ---------------------------------------------------------------------------
+
+workspace_store: dict[str, dict] = {}
+workspace_store_lock = asyncio.Lock()
+WORKSPACE_LEDGER_FILE = os.path.join(os.path.dirname(__file__), "engineer_workspaces.jsonl")
+
+
+class WorkspaceCreateRequest(BaseModel):
+    workspace_id: str
+    project_name: str
+    root_path: str                        # absolute path on the server
+    authorized_agents: list[str] = []
+    authorized_approvers: list[str] = []
+    allow_git_push: bool = False
+    allow_deploy: bool = False
+
+
+class WorkspaceRevokeRequest(BaseModel):
+    revocation_reason: str
+    revoking_admin: str
+
+
+def _persist_workspace(record: dict):
+    """Append workspace snapshot to the JSONL audit trail."""
+    try:
+        with open(WORKSPACE_LEDGER_FILE, "a") as f:
+            f.write(json.dumps(record) + "\n")
+    except Exception as exc:
+        logger.error(f"[WORKSPACE] Failed to persist workspace record: {exc}")
+
+
+def _load_workspaces_from_ledger():
+    """Replay workspace ledger on startup. Last write per workspace_id wins."""
+    if not os.path.exists(WORKSPACE_LEDGER_FILE):
+        return
+    seen: dict[str, dict] = {}
+    try:
+        with open(WORKSPACE_LEDGER_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                record = json.loads(line)
+                seen[record["workspace_id"]] = record
+    except Exception as exc:
+        logger.error(f"[WORKSPACE] Failed to replay workspace ledger: {exc}")
+        return
+    workspace_store.update(seen)
+    logger.info(f"[WORKSPACE] Loaded {len(seen)} workspace record(s) from ledger.")
+
+
+_load_workspaces_from_ledger()
+
+
+@app.post("/engineer/workspaces", status_code=201)
+async def create_workspace(req: WorkspaceCreateRequest):
+    """Create a new Engineer workspace authorization record."""
+    async with workspace_store_lock:
+        if req.workspace_id in workspace_store:
+            raise HTTPException(status_code=409,
+                                detail=f"Workspace '{req.workspace_id}' already exists.")
+        record = {
+            "workspace_id": req.workspace_id,
+            "project_name": req.project_name,
+            "root_path": req.root_path,
+            "authorized_agents": req.authorized_agents,
+            "authorized_approvers": req.authorized_approvers,
+            "allow_git_push": req.allow_git_push,
+            "allow_deploy": req.allow_deploy,
+            "status": "ACTIVE",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        }
+        workspace_store[req.workspace_id] = record
+        _persist_workspace(record)
+
+    logger.info(f"[WORKSPACE] Created workspace '{req.workspace_id}' → {req.root_path}")
+    return {"workspace_id": req.workspace_id, "status": "ACTIVE"}
+
+
+@app.get("/engineer/workspaces/{workspace_id}")
+async def get_workspace(workspace_id: str):
+    """Read a workspace record (used by WorkspaceGuard.check())."""
+    async with workspace_store_lock:
+        record = workspace_store.get(workspace_id)
+    if not record:
+        raise HTTPException(status_code=404, detail="Workspace record not found")
+    return record
+
+
+@app.post("/engineer/workspaces/{workspace_id}/revoke")
+async def revoke_workspace(workspace_id: str, req: WorkspaceRevokeRequest):
+    """
+    Immediately revoke a workspace — same pattern as POST /kavach/engagements/{id}/revoke.
+    Takes effect on the next WorkspaceGuard check without a process restart.
+    """
+    async with workspace_store_lock:
+        record = workspace_store.get(workspace_id)
+        if not record:
+            raise HTTPException(status_code=404, detail="Workspace record not found")
+        if record["status"] == "REVOKED":
+            raise HTTPException(status_code=409, detail="Workspace already revoked.")
+        record["status"] = "REVOKED"
+        record["revocation_reason"] = req.revocation_reason
+        record["revoking_admin"] = req.revoking_admin
+        record["revoked_at"] = datetime.now(timezone.utc).isoformat()
+        _persist_workspace(record)
+
+    await _write_engineer_approval_audit("WORKSPACE_REVOKED", {
+        "workspace_id": workspace_id,
+        "reason": req.revocation_reason,
+        "admin": req.revoking_admin,
+    })
+    logger.warning(f"[WORKSPACE] '{workspace_id}' REVOKED by {req.revoking_admin}: {req.revocation_reason}")
+    return {"workspace_id": workspace_id, "status": "REVOKED"}
 
 
 @app.get("/sse")

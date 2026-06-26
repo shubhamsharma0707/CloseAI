@@ -256,6 +256,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
                 write_result = await self.coder.write_code_to_file(
                     path=design_result.get("suggested_path", ""),
                     content=design_result["result"],
+                    workspace_id=workspace_id,
                 )
                 results.append({"step": "write_component", **write_result})
 
@@ -265,6 +266,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
             gen_result = await self.generative.generate_asset(
                 prompt=intent.description,
                 output_path=intent.output_path,
+                workspace_id=workspace_id,
             )
             results.append({"step": "generate_asset", **gen_result})
 
@@ -275,6 +277,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
                 prompt=intent.description,
                 language=intent.language,
                 context_files=intent.target_files or None,
+                workspace_id=workspace_id,
             )
             results.append({"step": "generate_code", **code_result})
 
@@ -283,6 +286,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
                 write_result = await self.coder.write_code_to_file(
                     path=intent.output_path,
                     content=code_result["result"],
+                    workspace_id=workspace_id,
                 )
                 results.append({"step": "write_code", **write_result})
 

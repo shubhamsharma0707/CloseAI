@@ -12,6 +12,10 @@ sys.path.insert(0, _ROOT)
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_ROOT, ".env"), override=False)
 
+_CHANAKYA_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _CHANAKYA_ROOT not in sys.path:
+    sys.path.insert(0, _CHANAKYA_ROOT)
+
 # Import all sub-agents from their respective phases
 from phase_1_quantitative.agent_chanakya_deterministic import DeterministicAuditAgent
 from phase_1_quantitative.agent_chanakya_auditability import AuditabilityAgent
@@ -133,7 +137,7 @@ class ChanakyaOrchestrator:
             logger.info(f"Transaction Amount ({float(reallocation_percentage)*100}% allocation): {transaction_amount}")
         else:
             logger.error("Phase 1 Failed: Deterministic math error. Halting workflow.")
-            return
+            return {"status": "ERROR", "summary": "Phase 1 Failed: Deterministic math error."}
 
         # PHASE 2: QUALITATIVE & STRATEGY (STRICT ESCROW CONTROLS)
         logger.info("\n>>> PHASE 2: ETHICAL COMPLIANCE & STRATEGY")
@@ -180,11 +184,11 @@ class ChanakyaOrchestrator:
             except Exception as e:
                 logger.error(f"Failed to write to escrow ledger: {e}")
                 
-            return  # HALT Pipeline
+            return {"status": "BLOCKED", "summary": f"EDD REQUIRED: {reason}"}  # HALT Pipeline
         else:
             logger.error(f"🚫 COMPLIANCE REJECTED: {reason}")
             logger.error("🛑 TRANSACTION ABORTED. (No Escrow created for hard rejection)")
-            return  # HALT Pipeline
+            return {"status": "BLOCKED", "summary": f"COMPLIANCE REJECTED: {reason}"}  # HALT Pipeline
 
         # PHASE 3: OUTPUT, VISUALIZATION & ESG
         logger.info("\n>>> PHASE 3: REPORTING & OUTPUT GENERATION")
@@ -202,6 +206,35 @@ class ChanakyaOrchestrator:
         logger.info("\n==================================================")
         logger.info("✅ CHANAKYA WORKFLOW COMPLETE")
         logger.info("==================================================")
+        return {"status": "OK", "summary": "Financial workflow completed successfully."}
+
+    async def run(self, user_prompt: str, session_id: str | None = None) -> dict:
+        """
+        Thin wrapper to provide a standardized agentic interface for RISHI Central Router.
+        """
+        intent = await self.parse_intent_with_ollama(user_prompt)
+        if not intent:
+            return {
+                "status": "ERROR",
+                "summary": "Failed to parse intent.",
+                "details": {},
+                "orchestrator": "chanakya"
+            }
+        
+        result = await self.run_full_financial_workflow(
+            principal=str(intent.get("principal", "0")),
+            reallocation_percentage=str(intent.get("reallocation_percentage", "0")),
+            proposed_action=intent.get("proposed_action", ""),
+            jurisdiction=intent.get("jurisdiction", "Unknown"),
+            entity_type=intent.get("entity_type", "Unknown")
+        )
+        
+        return {
+            "status": result.get("status", "OK"),
+            "summary": result.get("summary", ""),
+            "details": intent,
+            "orchestrator": "chanakya"
+        }
 
 async def main():
     ceo = ChanakyaOrchestrator()

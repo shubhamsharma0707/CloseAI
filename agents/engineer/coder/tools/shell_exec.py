@@ -19,10 +19,21 @@ import logging
 import os
 import sys
 
-# ── Path bootstrap ─────────────────────────────────────────────────────────
-_ROOT = os.path.join(os.path.dirname(__file__), "..", "..", "..", "..")
-sys.path.insert(0, _ROOT)
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..", "authorization"))
+# ── Robust path bootstrap (CWD-independent) ───────────────────────────────
+def _project_root() -> str:
+    """Walk up from __file__ until we find RISHI.py (project root)."""
+    p = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.exists(os.path.join(p, "RISHI.py")):
+            return p
+        p = os.path.dirname(p)
+    return p
+
+_ROOT      = _project_root()
+_KAVACH_AUTH = os.path.join(_ROOT, "agents", "kavach", "authorization")
+for _p in (_ROOT, _KAVACH_AUTH):
+    if _p not in sys.path:
+        sys.path.insert(0, _p)
 
 from audit_client import log_audit_event   # Kavach's audit client (reused)
 

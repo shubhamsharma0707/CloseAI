@@ -9,16 +9,23 @@ import logging
 import os
 import sys
 
-# ── Path bootstrap ─────────────────────────────────────────────────────────
-_AUTH_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "authorization")
-_KAVACH_AUTH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "..", "kavach", "authorization"
-)
-for _p in (_AUTH_DIR, _KAVACH_AUTH):
+# ── Robust path bootstrap (CWD-independent) ───────────────────────────────
+def _project_root() -> str:
+    p = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.exists(os.path.join(p, "RISHI.py")):
+            return p
+        p = os.path.dirname(p)
+    return p
+
+_ROOT        = _project_root()
+_ENGINEER    = os.path.join(_ROOT, "agents", "engineer")
+_KAVACH_AUTH = os.path.join(_ROOT, "agents", "kavach", "authorization")
+for _p in (_ROOT, _ENGINEER, _KAVACH_AUTH):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from workspace_guard import WorkspaceGuard
+from authorization.workspace_guard import WorkspaceGuard
 from audit_client import log_audit_event
 
 logger = logging.getLogger("Engineer.CoderAI.FileIO")

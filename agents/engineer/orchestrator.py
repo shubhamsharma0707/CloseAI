@@ -33,12 +33,20 @@ import logging
 import os
 import sys
 
-# ── Path bootstrap ─────────────────────────────────────────────────────────
-_HERE          = os.path.dirname(os.path.abspath(__file__))
-_PROJECT_ROOT  = os.path.join(_HERE, "..", "..")
-_KAVACH_AUTH   = os.path.join(_HERE, "..", "kavach", "authorization")
+# ── Robust path bootstrap (CWD-independent) ───────────────────────────────
+def _project_root() -> str:
+    p = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.exists(os.path.join(p, "RISHI.py")):
+            return p
+        p = os.path.dirname(p)
+    return p
 
-for _p in (_PROJECT_ROOT, _HERE, _KAVACH_AUTH):
+_PROJECT_ROOT  = _project_root()
+_ENGINEER_ROOT = os.path.join(_PROJECT_ROOT, "agents", "engineer")
+_KAVACH_AUTH   = os.path.join(_PROJECT_ROOT, "agents", "kavach", "authorization")
+
+for _p in (_PROJECT_ROOT, _ENGINEER_ROOT, _KAVACH_AUTH):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 

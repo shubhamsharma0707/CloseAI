@@ -11,10 +11,17 @@ This is intentional: the plan specifies "import, don't reimplement".
 import sys
 import os
 
-# ── Ensure Kavach's authorization package is on the path ──────────────────
-_KAVACH_AUTH = os.path.join(
-    os.path.dirname(__file__), "..", "..", "kavach", "authorization"
-)
+# ── Robust path bootstrap (CWD-independent) ───────────────────────────────
+def _project_root() -> str:
+    p = os.path.dirname(os.path.abspath(__file__))
+    for _ in range(8):
+        if os.path.exists(os.path.join(p, "RISHI.py")):
+            return p
+        p = os.path.dirname(p)
+    return p
+
+_ROOT        = _project_root()
+_KAVACH_AUTH = os.path.join(_ROOT, "agents", "kavach", "authorization")
 if _KAVACH_AUTH not in sys.path:
     sys.path.insert(0, _KAVACH_AUTH)
 

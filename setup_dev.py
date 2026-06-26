@@ -34,6 +34,10 @@ AGENT_IDS = [
     "AGENT_CHANAKYA_VISUALIZATION",
     "AGENT_CHANAKYA_ESG",
     "AGENT_CHANAKYA_ADAPTABILITY",
+    # Engineer sub-agents
+    "AGENT_ENGINEER_CODER",
+    "AGENT_ENGINEER_DESIGNER",
+    "AGENT_ENGINEER_GENERATIVE",
 ]
 
 
@@ -76,6 +80,8 @@ def main():
     print("\nNext steps:")
     print("  1.  python3 RISHI.py                              (terminal 1)")
     print("  2.  cd agents/chanakya && python3 orchestrator.py  (terminal 2)")
+    print("  3.  cd agents/kavach   && python3 orchestrator.py  (terminal 3, optional)")
+    print("  4.  cd agents/engineer && python3 orchestrator.py  (terminal 4, optional)")
     print("=" * 56)
 
 

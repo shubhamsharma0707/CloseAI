@@ -115,6 +115,11 @@ Respond ONLY with valid JavaScript/JSX code. No explanations, no markdown preamb
             logger.error("[DesignerAI] Kill switch ACTIVE — aborting generate_component.")
             return {"status": "ERROR", "result": "Kill switch active.", "tier": 0}
 
+        import re
+        if not re.match(r"^[A-Za-z][A-Za-z0-9]*$", component_name):
+            logger.error(f"[DesignerAI] Invalid component_name: {component_name}")
+            return {"status": "ERROR", "result": "Invalid component_name. Must be PascalCase alphanumeric.", "tier": 0}
+
         log_audit_event(AGENT_ID, "GENERATE_COMPONENT_START", {
             "component_name": component_name,
             "description_snippet": description[:200],
@@ -183,6 +188,11 @@ Respond ONLY with valid JavaScript/JSX code. No explanations, no markdown preamb
         """
         if check_kill_switch():
             return {"status": "ERROR", "result": "Kill switch active.", "tier": 0}
+
+        import re
+        if not re.match(r"^[A-Za-z][A-Za-z0-9]*$", page_name):
+            logger.error(f"[DesignerAI] Invalid page_name: {page_name}")
+            return {"status": "ERROR", "result": "Invalid page_name. Must be PascalCase alphanumeric.", "tier": 0}
 
         log_audit_event(AGENT_ID, "GENERATE_PAGE_START", {
             "page_name": page_name,

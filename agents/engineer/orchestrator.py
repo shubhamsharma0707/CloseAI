@@ -91,6 +91,8 @@ class EngineerIntent:
         self.run_tests: bool      = data.get("run_tests", False)
         self.commit: bool         = data.get("commit", False)
         self.commit_message: str  = data.get("commit_message", "")
+        self.push: bool           = data.get("push", False)
+        self.deploy: bool         = data.get("deploy", False)
 
     def to_dict(self) -> dict:
         return self.__dict__
@@ -129,7 +131,7 @@ class EngineerOrchestrator:
         system_prompt = """
 You are Engineer, an AI engineering orchestrator.
 Parse the user's request and return ONLY a valid JSON object with these keys:
-- "task_type": one of ["CODE", "DESIGN", "GENERATE_ASSET", "TEST", "BUILD", "COMMIT", "MULTI"]
+- "task_type": one of ["CODE", "DESIGN", "GENERATE_ASSET", "TEST", "BUILD", "COMMIT", "PUSH", "DEPLOY", "MULTI"]
 - "description": what the user wants in plain English
 - "target_files": list of file paths mentioned (empty list if none)
 - "component_name": PascalCase component name if designing a UI component (empty string if none)
@@ -138,6 +140,8 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
 - "run_tests": true if user wants tests run after code is written
 - "commit": true if user wants changes committed to git
 - "commit_message": git commit message (empty string if commit is false)
+- "push": true if user wants changes pushed to git remote
+- "deploy": true if user wants to deploy the workspace
 """
 
         try:
@@ -324,6 +328,76 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
                         "result": "Commit denied by human reviewer.",
                         "tier": 2,
                     })
+
+        # PUSH: Tier 2 — requires approval
+        if intent.task_type == "PUSH" or intent.push:
+            logger.info("\n>>> PUSH (Tier 2): pushing to remote")
+            try:
+                push_result = await self.coder.push_changes(
+                    cwd=cwd,
+                    workspace_id=workspace_id,
+                    approval_id=None,
+                )
+                results.append({"step": "git_push", **push_result})
+            except NeedsApprovalError as exc:
+                approved = await self._get_approval(
+                    action_type=exc.action_type,
+                    context=exc.context,
+                    workspace_id=workspace_id,
+                )
+                if approved:
+                    push_result = await self.coder.push_changes(
+                        cwd=cwd,
+                        workspace_id=workspace_id,
+                        approval_id="HUMAN_APPROVED",
+                    )
+                    results.append({"step": "git_push", **push_result})
+                else:
+                    results.append({
+                        "step": "git_push",
+                        "status": "BLOCKED",
+                        "result": "Push denied by human reviewer.",
+                        "tier": 2,
+                    })
+
+        # DEPLOY: Tier 3 — requires dual-control approval
+        if intent.task_type == "DEPLOY" or intent.deploy:
+            if not workspace_id:
+                results.append({
+                    "step": "deploy",
+                    "status": "ERROR",
+                    "result": "Cannot infer deploy target from natural language. Provide a specific workspace_id.",
+                    "tier": 3,
+                })
+            else:
+                logger.info(f"\n>>> DEPLOY (Tier 3): deploying workspace {workspace_id}")
+                try:
+                    deploy_result = await self.coder.deploy(
+                        cwd=cwd,
+                        workspace_id=workspace_id,
+                        approval_id=None,
+                    )
+                    results.append({"step": "deploy", **deploy_result})
+                except NeedsApprovalError as exc:
+                    approved = await self._get_approval(
+                        action_type=exc.action_type,
+                        context=exc.context,
+                        workspace_id=workspace_id,
+                    )
+                    if approved:
+                        deploy_result = await self.coder.deploy(
+                            cwd=cwd,
+                            workspace_id=workspace_id,
+                            approval_id="HUMAN_APPROVED",
+                        )
+                        results.append({"step": "deploy", **deploy_result})
+                    else:
+                        results.append({
+                            "step": "deploy",
+                            "status": "BLOCKED",
+                            "result": "Deploy denied by human reviewer(s).",
+                            "tier": 3,
+                        })
 
         # ── Aggregate ──────────────────────────────────────────────────────
         overall_status = "OK" if all(r.get("status") in ("OK", "BLOCKED") for r in results) else "ERROR"

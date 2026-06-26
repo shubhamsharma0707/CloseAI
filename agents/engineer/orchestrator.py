@@ -446,10 +446,12 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
         logger.info("=" * 60)
 
         return {
-            "status":          overall_status,
+            "status":          "BLOCKED" if overall_status == "BLOCKED" else overall_status,
+            "summary":         f"Engineer workflow completed with status: {overall_status}. {len(results)} steps executed.",
             "steps":           results,
             "workspace_id":    workspace_id,
-            "intent":          intent.to_dict(),
+            "details":         intent.to_dict(),
+            "orchestrator":    "engineer"
         }
 
 

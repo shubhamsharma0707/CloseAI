@@ -44,7 +44,7 @@ for _p in (_PROJECT_ROOT, _KAVACH_AUTH, _ENGINEER_ROOT):
 from dotenv import load_dotenv
 load_dotenv(os.path.join(_PROJECT_ROOT, ".env"), override=False)
 
-from authorization.workspace_guard import WorkspaceGuard
+from agents.engineer.authorization.workspace_guard import WorkspaceGuard
 from audit_client import log_audit_event
 from kill_switch_client import check_kill_switch
 from risk_tier import RiskTier, classify_action

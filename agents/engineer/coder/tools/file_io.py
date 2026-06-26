@@ -27,7 +27,7 @@ for _p in (_ROOT, _KAVACH_AUTH, _ENGINEER):
     if _p in sys.path: sys.path.remove(_p)
     sys.path.insert(0, _p)
 
-from authorization.workspace_guard import WorkspaceGuard
+from agents.engineer.authorization.workspace_guard import WorkspaceGuard
 from audit_client import log_audit_event
 
 logger = logging.getLogger("Engineer.CoderAI.FileIO")

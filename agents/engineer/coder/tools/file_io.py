@@ -24,8 +24,8 @@ _KAVACH_AUTH = os.path.join(_ROOT, "agents", "kavach", "authorization")
 # Insert in reverse priority order — last insert(0,...) wins, so _ENGINEER
 # ends up at sys.path[0], shadowing Kavach's audit_client correctly.
 for _p in (_ROOT, _KAVACH_AUTH, _ENGINEER):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+    if _p in sys.path: sys.path.remove(_p)
+    sys.path.insert(0, _p)
 
 from authorization.workspace_guard import WorkspaceGuard
 from audit_client import log_audit_event

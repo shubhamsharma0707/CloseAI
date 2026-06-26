@@ -69,6 +69,23 @@ def _load_design_tokens() -> str:
         return f.read()
 
 
+def _validate_component_output(generated: str, component_name: str) -> str | None:
+    """
+    Minimal structural sanity check on LLM output before it's handed to
+    CoderAI to write to disk. Returns an error string if invalid, None if OK.
+    Not a full JS/JSX parser — just catches the obvious failure modes
+    (empty output, leaked markdown fences, unbalanced braces, wrong name).
+    """
+    if not generated or not generated.strip():
+        return "Generated component is empty."
+    if "```" in generated:
+        return "Generated component contains markdown code fences — model did not follow the no-markdown instruction."
+    if generated.count("{") != generated.count("}"):
+        return "Generated component has unbalanced braces."
+    if component_name not in generated:
+        return f"Generated component does not reference its own name '{component_name}' — likely malformed."
+    return None
+
 class DesignerAI:
     """
     DesignerAI — UI/UX component generation sub-agent.
@@ -152,6 +169,19 @@ Respond ONLY with valid JavaScript/JSX code. No explanations, no markdown preamb
             else:
                 generated = getattr(getattr(response, "message", None), "content", "")
 
+            validation_error = _validate_component_output(generated, component_name)
+            if validation_error:
+                logger.error(f"[DesignerAI] Output validation failed: {validation_error}")
+                log_audit_event(AGENT_ID, "GENERATE_COMPONENT_VALIDATION_FAILED", {
+                    "component_name": component_name,
+                    "reason": validation_error,
+                })
+                return {
+                    "status": "ERROR",
+                    "result": f"Validation failed: {validation_error}",
+                    "tier": RiskTier.TIER_0_GENERATE,
+                }
+
             suggested_path = os.path.join(
                 _COMPONENTS_DIR, f"{component_name}.jsx"
             )
@@ -220,6 +250,19 @@ Respond ONLY with valid JavaScript/JSX code. No explanations, no markdown preamb
                 generated = msg.get("content", "") if isinstance(msg, dict) else getattr(msg, "content", "")
             else:
                 generated = getattr(getattr(response, "message", None), "content", "")
+
+            validation_error = _validate_component_output(generated, page_name)
+            if validation_error:
+                logger.error(f"[DesignerAI] Output validation failed: {validation_error}")
+                log_audit_event(AGENT_ID, "GENERATE_PAGE_VALIDATION_FAILED", {
+                    "page_name": page_name,
+                    "reason": validation_error,
+                })
+                return {
+                    "status": "ERROR",
+                    "result": f"Validation failed: {validation_error}",
+                    "tier": RiskTier.TIER_0_GENERATE,
+                }
 
             _pages_dir = os.path.join(_FRONTEND_SRC, "pages")
             suggested_path = os.path.join(_pages_dir, f"{page_name}.jsx")

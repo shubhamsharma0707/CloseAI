@@ -1617,9 +1617,59 @@ async def anomaly_status(engagement_id: str):
 #     Following the same numbered-section-comment convention.
 # ---------------------------------------------------------------------------
 
+kavach_audit_hash = "KAVACH_GENESIS_HASH"
+kavach_audit_lock = asyncio.Lock()
+KAVACH_AUDIT_LEDGER_FILE = os.path.join(os.path.dirname(__file__), "kavach_audit_ledger.jsonl")
+
+def _load_kavach_audit_hash():
+    """Resume the hash chain from the last ledger entry, instead of
+    silently forking to a new genesis on every process restart."""
+    global kavach_audit_hash
+    if not os.path.exists(KAVACH_AUDIT_LEDGER_FILE):
+        return
+    last_hash = None
+    try:
+        with open(KAVACH_AUDIT_LEDGER_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                last_hash = json.loads(line).get("hash")
+    except Exception as exc:
+        logger.error(f"[KAVACH_AUDIT] Failed to replay ledger for hash resume: {exc}")
+        return
+    if last_hash:
+        kavach_audit_hash = last_hash
+        logger.info(f"[KAVACH_AUDIT] Resumed audit chain from {last_hash[:12]}...")
+
+_load_kavach_audit_hash()
+
 engineer_audit_hash = "ENGINEER_GENESIS_HASH"
 engineer_audit_lock = asyncio.Lock()
 ENGINEER_AUDIT_LEDGER_FILE = os.path.join(os.path.dirname(__file__), "engineer_audit_ledger.jsonl")
+
+def _load_engineer_audit_hash():
+    """Resume the hash chain from the last ledger entry, instead of
+    silently forking to a new genesis on every process restart."""
+    global engineer_audit_hash
+    if not os.path.exists(ENGINEER_AUDIT_LEDGER_FILE):
+        return
+    last_hash = None
+    try:
+        with open(ENGINEER_AUDIT_LEDGER_FILE) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                last_hash = json.loads(line).get("hash")
+    except Exception as exc:
+        logger.error(f"[ENGINEER_AUDIT] Failed to replay ledger for hash resume: {exc}")
+        return
+    if last_hash:
+        engineer_audit_hash = last_hash
+        logger.info(f"[ENGINEER_AUDIT] Resumed audit chain from {last_hash[:12]}...")
+
+_load_engineer_audit_hash()
 
 
 class EngineerAuditPayload(BaseModel):

@@ -190,40 +190,26 @@ class GenerativeAI:
         })
         logger.info(f"[GenerativeAI] Running: {' '.join(cmd)}")
 
-        try:
-            proc = await asyncio.wait_for(
-                asyncio.create_subprocess_exec(
-                    *cmd,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                ),
-                timeout=300,  # 5-minute hard ceiling
-            )
-            stdout, stderr = await proc.communicate()
+        from coder.tools.shell_exec import shell_exec
+        result = await shell_exec(
+            cmd,
+            cwd=os.path.dirname(real_output),
+            timeout=300,
+            agent_id=AGENT_ID,
+            extra_allowed_binaries={self._tool},
+        )
 
-            if proc.returncode == 0:
-                log_audit_event(AGENT_ID, "GENERATE_ASSET_END", {
-                    "output_path": real_output, "status": "OK",
-                })
-                logger.info(f"[GenerativeAI] Asset generated: {real_output}")
-                return {
-                    "status": "OK",
-                    "result": real_output,
-                    "tier": RiskTier.TIER_0_GENERATE,
-                }
-            else:
-                error_msg = stderr.decode("utf-8", errors="replace")[:2048]
-                logger.error(f"[GenerativeAI] CLI error (rc={proc.returncode}): {error_msg}")
-                log_audit_event(AGENT_ID, "GENERATE_ASSET_CLI_ERROR", {
-                    "returncode": proc.returncode, "stderr": error_msg,
-                })
-                return {
-                    "status": "ERROR",
-                    "result": f"CLI exited with rc={proc.returncode}: {error_msg}",
-                    "tier": RiskTier.TIER_0_GENERATE,
-                }
-
-        except asyncio.TimeoutError:
+        if result.success:
+            log_audit_event(AGENT_ID, "GENERATE_ASSET_END", {
+                "output_path": real_output, "status": "OK",
+            })
+            logger.info(f"[GenerativeAI] Asset generated: {real_output}")
+            return {
+                "status": "OK",
+                "result": real_output,
+                "tier": RiskTier.TIER_0_GENERATE,
+            }
+        elif result.timed_out:
             logger.error("[GenerativeAI] Diffusion timed out after 300s.")
             log_audit_event(AGENT_ID, "GENERATE_ASSET_TIMEOUT", {"output_path": real_output})
             return {
@@ -231,11 +217,14 @@ class GenerativeAI:
                 "result": "Diffusion model timed out after 300 seconds.",
                 "tier": RiskTier.TIER_0_GENERATE,
             }
-        except Exception as exc:
-            logger.error(f"[GenerativeAI] Unexpected error: {exc}")
-            log_audit_event(AGENT_ID, "GENERATE_ASSET_ERROR", {"error": str(exc)})
+        else:
+            error_msg = result.stderr[:2048]
+            logger.error(f"[GenerativeAI] CLI error (rc={result.returncode}): {error_msg}")
+            log_audit_event(AGENT_ID, "GENERATE_ASSET_CLI_ERROR", {
+                "returncode": result.returncode, "stderr": error_msg,
+            })
             return {
                 "status": "ERROR",
-                "result": str(exc),
+                "result": f"CLI exited with rc={result.returncode}: {error_msg}",
                 "tier": RiskTier.TIER_0_GENERATE,
             }

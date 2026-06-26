@@ -1637,7 +1637,7 @@ async def engineer_audit_log(req: EngineerAuditPayload):
     """
     global engineer_audit_hash
 
-    expected_secret = os.getenv("AGENT_TOKEN_ENGINEER_CODER", "default_engineer_secret").encode()
+    expected_secret = os.getenv("AGENT_TOKEN_AGENT_ENGINEER_CODER", "default_engineer_secret").encode()
     message = f"{req.payload}|{req.timestamp}".encode()
     expected_sig = hmac.new(expected_secret, message, hashlib.sha256).hexdigest()
 
@@ -1677,7 +1677,7 @@ engineer_approval_store_lock = asyncio.Lock()
 
 async def _write_engineer_approval_audit(event: str, detail: dict):
     """Write an Engineer approval lifecycle event to the Engineer audit ledger."""
-    secret = os.getenv("AGENT_TOKEN_ENGINEER_CODER", "default_engineer_secret").encode()
+    secret = os.getenv("AGENT_TOKEN_AGENT_ENGINEER_CODER", "default_engineer_secret").encode()
     payload_dict = {"phase": event, "event_data": detail}
     payload_str = json.dumps(payload_dict, sort_keys=True)
     timestamp = datetime.now(timezone.utc).isoformat()

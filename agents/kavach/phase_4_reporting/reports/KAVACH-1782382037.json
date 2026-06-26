@@ -1,0 +1,58 @@
+{
+  "report_id": "KAVACH-1782382037",
+  "target": "admin.corp.com",
+  "engagement_id": "ENG-2026-001",
+  "generated_at": "2026-06-25T10:07:17.113249+00:00",
+  "executive_summary": "Assessment identified 3 finding(s): 1 CRITICAL, 1 HIGH, 1 MEDIUM. Key findings: WEAK_CONFIG on admin.corp.com; SQL_INJECTION on api.corp.com. Overall risk posture: CRITICAL \u2014 immediate remediation required before further use.",
+  "risk_posture": {
+    "critical": 1,
+    "high": 1,
+    "medium": 1,
+    "low": 0,
+    "info": 0,
+    "total": 3
+  },
+  "reconnaissance_summary": {
+    "discovered_assets": [
+      "admin.corp.com"
+    ],
+    "open_ports": [
+      443
+    ]
+  },
+  "vulnerabilities_found": [
+    {
+      "type": "WEAK_CONFIG",
+      "severity": "CRITICAL",
+      "asset": "admin.corp.com",
+      "confidence": 0.9,
+      "finding_id": "e2e7a0bc6d1d7e78",
+      "status": "OPEN",
+      "remediation_status": "OPEN"
+    },
+    {
+      "type": "SQL_INJECTION",
+      "severity": "HIGH",
+      "asset": "api.corp.com",
+      "confidence": 0.75,
+      "finding_id": "cc7da25cc96205e0",
+      "status": "OPEN",
+      "remediation_status": "OPEN"
+    },
+    {
+      "type": "XSS",
+      "severity": "MEDIUM",
+      "asset": "portal.corp.com",
+      "confidence": 0.6,
+      "finding_id": "e64b16f3ac9a55d0",
+      "status": "OPEN",
+      "remediation_status": "OPEN"
+    }
+  ],
+  "exploitation_results": [],
+  "remediation_recommendations": [
+    "[WEAK_CONFIG] Audit configuration. Enforce MFA and IP whitelisting for admin interfaces. Review firewall rules and disable unnecessary features.",
+    "[SQL_INJECTION] Use parameterized queries / prepared statements throughout the codebase. Apply least-privilege database accounts. Enable WAF rules for SQLi patterns.",
+    "[XSS] Apply output encoding (HTML-escape) on all user-controlled data. Implement Content-Security-Policy (CSP) headers. Use framework-native XSS mitigations."
+  ]
+}

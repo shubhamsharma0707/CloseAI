@@ -29,13 +29,16 @@ def _project_root() -> str:
         p = os.path.dirname(p)
     return p
 
-_ROOT      = _project_root()
+_ROOT        = _project_root()
+_ENGINEER    = os.path.join(_ROOT, "agents", "engineer")
 _KAVACH_AUTH = os.path.join(_ROOT, "agents", "kavach", "authorization")
-for _p in (_ROOT, _KAVACH_AUTH):
+# Insert in reverse priority order — last insert(0,...) wins, so _ENGINEER
+# ends up at sys.path[0], shadowing Kavach's audit_client correctly.
+for _p in (_ROOT, _KAVACH_AUTH, _ENGINEER):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-from audit_client import log_audit_event   # Kavach's audit client (reused)
+from audit_client import log_audit_event   # Engineer's own audit_client (→ /engineer/audit)
 
 logger = logging.getLogger("Engineer.CoderAI.ShellExec")
 

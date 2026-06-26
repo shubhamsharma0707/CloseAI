@@ -111,6 +111,12 @@ class GenerativeAI:
         """
         Generate an image asset via the local diffusion CLI.
 
+        NOTE (Untested Path): The success path (local diffusion CLI execution) has NOT been 
+        verified against a real local diffusion CLI because no such tool is installed 
+        in this environment via ENGINEER_SD_CLI. The `GENERATIVE_TOOL_NOT_FOUND` path 
+        is verified, but the actual subprocess invocation success path remains untested 
+        pending a tool becoming available.
+
         Parameters
         ----------
         prompt      : Text prompt for image generation.

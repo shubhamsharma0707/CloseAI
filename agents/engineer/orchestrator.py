@@ -187,10 +187,11 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
             "context": context,
         })
 
+        severity = "CRITICAL" if tier.requires_dual_control() else "HIGH"
         approval_id = await request_human_approval(
             vuln={"type": action_type},
             asset=context.get("cwd", workspace_id),
-            severity="HIGH",
+            severity=severity,
             engagement_id=workspace_id,
             requesting_agent=AGENT_ID,
         )
@@ -213,7 +214,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
     # Main workflow
     # ------------------------------------------------------------------
 
-    async def run(self, user_prompt: str, workspace_id: str = "ENG-WORKSPACE-001") -> dict:
+    async def run(self, user_prompt: str, workspace_id: str | None = None) -> dict:
         """
         Full Engineer workflow:
           parse intent → classify tier → dispatch sub-agents → aggregate results.
@@ -240,6 +241,9 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
 
         results: list[dict] = []
         cwd = _PROJECT_ROOT  # default CWD — orchestrator can override per-task
+        
+        # Default workspace for non-critical actions if none provided
+        effective_workspace_id = workspace_id or "ENG-WORKSPACE-001"
 
         # ── Route by task type ─────────────────────────────────────────────
 
@@ -253,11 +257,24 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
             results.append({"step": "design_component", **design_result})
 
             if design_result["status"] == "OK":
-                write_result = await self.coder.write_code_to_file(
-                    path=design_result.get("suggested_path", ""),
-                    content=design_result["result"],
-                    workspace_id=workspace_id,
-                )
+                try:
+                    write_result = await self.coder.write_code_to_file(
+                        path=design_result.get("suggested_path", ""),
+                        content=design_result["result"],
+                        workspace_id=effective_workspace_id,
+                        approval_id=None,
+                    )
+                except NeedsApprovalError as exc:
+                    approved = await self._get_approval(exc.action_type, exc.context, effective_workspace_id)
+                    if approved:
+                        write_result = await self.coder.write_code_to_file(
+                            path=design_result.get("suggested_path", ""),
+                            content=design_result["result"],
+                            workspace_id=effective_workspace_id,
+                            approval_id="OVERWRITE_APPROVED"
+                        )
+                    else:
+                        write_result = {"status": "ERROR", "result": "Approval denied for overwrite"}
                 results.append({"step": "write_component", **write_result})
 
         # GENERATE_ASSET: GenerativeAI makes an image
@@ -266,7 +283,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
             gen_result = await self.generative.generate_asset(
                 prompt=intent.description,
                 output_path=intent.output_path,
-                workspace_id=workspace_id,
+                workspace_id=effective_workspace_id,
             )
             results.append({"step": "generate_asset", **gen_result})
 
@@ -277,17 +294,30 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
                 prompt=intent.description,
                 language=intent.language,
                 context_files=intent.target_files or None,
-                workspace_id=workspace_id,
+                workspace_id=effective_workspace_id,
             )
             results.append({"step": "generate_code", **code_result})
 
             # Write to file if output path specified
             if code_result["status"] == "OK" and intent.output_path:
-                write_result = await self.coder.write_code_to_file(
-                    path=intent.output_path,
-                    content=code_result["result"],
-                    workspace_id=workspace_id,
-                )
+                try:
+                    write_result = await self.coder.write_code_to_file(
+                        path=intent.output_path or "output.py",
+                        content=code_result["result"],
+                        workspace_id=effective_workspace_id,
+                        approval_id=None,
+                    )
+                except NeedsApprovalError as exc:
+                    approved = await self._get_approval(exc.action_type, exc.context, effective_workspace_id)
+                    if approved:
+                        write_result = await self.coder.write_code_to_file(
+                            path=intent.output_path or "output.py",
+                            content=code_result["result"],
+                            workspace_id=effective_workspace_id,
+                            approval_id="OVERWRITE_APPROVED"
+                        )
+                    else:
+                        write_result = {"status": "ERROR", "result": "Approval denied for overwrite"}
                 results.append({"step": "write_code", **write_result})
 
         # TEST: Run test suite after code changes
@@ -335,6 +365,10 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
 
         # PUSH: Tier 2 — requires approval
         if intent.task_type == "PUSH" or intent.push:
+            if not workspace_id:
+                logger.error("[Engineer] PUSH requires an explicit workspace_id. Default fallback not allowed.")
+                return {"status": "ERROR", "result": "PUSH requires an explicit workspace_id.", "steps": results}
+                
             logger.info("\n>>> PUSH (Tier 2): pushing to remote")
             try:
                 push_result = await self.coder.push_changes(
@@ -367,41 +401,37 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
         # DEPLOY: Tier 3 — requires dual-control approval
         if intent.task_type == "DEPLOY" or intent.deploy:
             if not workspace_id:
-                results.append({
-                    "step": "deploy",
-                    "status": "ERROR",
-                    "result": "Cannot infer deploy target from natural language. Provide a specific workspace_id.",
-                    "tier": 3,
-                })
-            else:
-                logger.info(f"\n>>> DEPLOY (Tier 3): deploying workspace {workspace_id}")
-                try:
+                logger.error("[Engineer] DEPLOY requires an explicit workspace_id. Default fallback not allowed.")
+                return {"status": "ERROR", "result": "DEPLOY requires an explicit workspace_id.", "steps": results}
+                
+            logger.info("\n>>> DEPLOY (Tier 3): Triggering workspace deploy")
+            try:
+                deploy_result = await self.coder.deploy(
+                    cwd=cwd,
+                    workspace_id=workspace_id,
+                    approval_id=None,
+                )
+                results.append({"step": "deploy", **deploy_result})
+            except NeedsApprovalError as exc:
+                approved = await self._get_approval(
+                    action_type=exc.action_type,
+                    context=exc.context,
+                    workspace_id=workspace_id,
+                )
+                if approved:
                     deploy_result = await self.coder.deploy(
                         cwd=cwd,
                         workspace_id=workspace_id,
-                        approval_id=None,
+                        approval_id="HUMAN_APPROVED",
                     )
                     results.append({"step": "deploy", **deploy_result})
-                except NeedsApprovalError as exc:
-                    approved = await self._get_approval(
-                        action_type=exc.action_type,
-                        context=exc.context,
-                        workspace_id=workspace_id,
-                    )
-                    if approved:
-                        deploy_result = await self.coder.deploy(
-                            cwd=cwd,
-                            workspace_id=workspace_id,
-                            approval_id="HUMAN_APPROVED",
-                        )
-                        results.append({"step": "deploy", **deploy_result})
-                    else:
-                        results.append({
-                            "step": "deploy",
-                            "status": "BLOCKED",
-                            "result": "Deploy denied by human reviewer(s).",
-                            "tier": 3,
-                        })
+                else:
+                    results.append({
+                        "step": "deploy",
+                        "status": "BLOCKED",
+                        "result": "Deploy denied by human reviewer(s).",
+                        "tier": 3,
+                    })
 
         # ── Aggregate ──────────────────────────────────────────────────────
         overall_status = "OK" if all(r.get("status") in ("OK", "BLOCKED") for r in results) else "ERROR"

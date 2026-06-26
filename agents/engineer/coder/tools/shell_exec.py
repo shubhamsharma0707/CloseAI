@@ -52,7 +52,6 @@ ALLOWED_BINARIES: set[str] = {
     "eslint",
     "prettier",
     "vite",
-    "bash",        # for simple script runners; arguments still validated
 }
 
 MAX_OUTPUT_BYTES = 64 * 1024   # 64 KB output cap

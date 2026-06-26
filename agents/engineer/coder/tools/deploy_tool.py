@@ -25,22 +25,15 @@ logger = logging.getLogger("Engineer.CoderAI.DeployTool")
 RISHI_URL = os.getenv("RISHI_BASE_URL", "http://127.0.0.1:8000")
 AGENT_ID = "AGENT_ENGINEER_CODER"
 
-async def deploy(cwd: str, workspace_id: str) -> dict:
+async def deploy(cwd: str, workspace_info: dict) -> dict:
     """
     Execute the deploy_command pre-configured in the workspace record.
+    Relies on the caller (CoderAI / WorkspaceGuard) to have already
+    verified status == "ACTIVE" and allow_deploy is True.
     """
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(f"{RISHI_URL}/engineer/workspaces/{workspace_id}")
-            resp.raise_for_status()
-            record = resp.json()
-    except Exception as exc:
-        logger.error(f"[DeployTool] Could not fetch workspace record: {exc}")
-        return {"status": "ERROR", "result": f"Could not fetch workspace record from RISHI: {exc}"}
-        
-    deploy_command = record.get("deploy_command")
+    deploy_command = workspace_info.get("deploy_command")
     if not deploy_command or not isinstance(deploy_command, list):
-        logger.error(f"[DeployTool] Workspace {workspace_id} has no valid deploy_command configured.")
+        logger.error(f"[DeployTool] Workspace {workspace_info.get('workspace_id', 'unknown')} has no valid deploy_command configured.")
         return {"status": "ERROR", "result": "DEPLOY_NOT_CONFIGURED: Workspace does not have a valid deploy_command list configured."}
         
     logger.info(f"[DeployTool] Executing pre-authorized deploy command: {' '.join(deploy_command)}")

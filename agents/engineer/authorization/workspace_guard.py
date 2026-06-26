@@ -52,6 +52,7 @@ class GuardResult:
     reason: str
     path: Optional[str] = None
     action: Optional[str] = None
+    workspace_info: Optional[dict] = None
 
 
 class WorkspaceGuard:
@@ -125,7 +126,9 @@ class WorkspaceGuard:
             return GuardResult(allowed=False, reason="DEPLOY_NOT_AUTHORIZED", path=path, action=action)
 
         # RISHI checks passed, now run the local pattern boundary check
-        return self.check(action, path)
+        local_result = self.check(action, path)
+        local_result.workspace_info = record
+        return local_result
 
     def check(self, action: str, path: str) -> GuardResult:
         """

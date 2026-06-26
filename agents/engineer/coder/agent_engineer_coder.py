@@ -159,14 +159,16 @@ Do not wrap in triple backticks unless asked."""
     # Tier 1 — Write file
     # ------------------------------------------------------------------
 
-    async def write_code_to_file(self, path: str, content: str, workspace_id: str) -> dict:
-        """Write generated code to a workspace file. Tier 1."""
+    async def write_code_to_file(self, path: str, content: str, workspace_id: str, approval_id: str | None = None) -> dict:
+        """Write generated code to a workspace file. Tier 1 (or Tier 2 if overwriting)."""
         if check_kill_switch():
             return {"status": "ERROR", "result": "Kill switch active.", "tier": 1}
 
         try:
-            real_path = await write_file(path, content, workspace_id, agent_id=AGENT_ID)
-            return {"status": "OK", "result": real_path, "tier": RiskTier.TIER_1_WRITE}
+            real_path = await write_file(path, content, workspace_id, agent_id=AGENT_ID, overwrite=(approval_id is not None))
+            return {"status": "OK", "result": real_path, "tier": RiskTier.TIER_2_WRITE if approval_id else RiskTier.TIER_1_WRITE, "approval_id": approval_id}
+        except FileExistsError:
+            raise NeedsApprovalError(action_type="file_overwrite", context={"path": path})
         except PermissionError as exc:
             return {"status": "ERROR", "result": str(exc), "tier": RiskTier.TIER_1_WRITE}
 
@@ -307,7 +309,7 @@ Do not wrap in triple backticks unless asked."""
             )
 
         from coder.tools.deploy_tool import deploy as run_deploy
-        result = await run_deploy(cwd, workspace_id)
+        result = await run_deploy(cwd, guard_result.workspace_info)
         if result["status"] == "ERROR":
             return {"status": "ERROR", "result": result["result"], "tier": 3}
 

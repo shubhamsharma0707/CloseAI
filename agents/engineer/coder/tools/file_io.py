@@ -35,12 +35,12 @@ logger = logging.getLogger("Engineer.CoderAI.FileIO")
 _guard = WorkspaceGuard()
 
 
-def read_file(path: str, agent_id: str = "AGENT_ENGINEER_CODER") -> str:
+async def read_file(path: str, workspace_id: str, agent_id: str = "AGENT_ENGINEER_CODER") -> str:
     """
     Read a file within the workspace. Fail-closed if path is outside workspace.
     Returns file contents as a string, or raises PermissionError / FileNotFoundError.
     """
-    result = _guard.check("read", path)
+    result = await _guard.check_async("read", path, workspace_id, agent_id=agent_id)
     if not result.allowed:
         logger.warning(f"[FileIO] READ DENIED: {result.reason} → {path}")
         raise PermissionError(f"WorkspaceGuard: {result.reason} for path: {path}")
@@ -52,9 +52,10 @@ def read_file(path: str, agent_id: str = "AGENT_ENGINEER_CODER") -> str:
     return content
 
 
-def write_file(
+async def write_file(
     path: str,
     content: str,
+    workspace_id: str,
     agent_id: str = "AGENT_ENGINEER_CODER",
     overwrite: bool = True,
 ) -> str:
@@ -63,7 +64,7 @@ def write_file(
     Logs the write action to RISHI audit ledger before writing.
     Returns the real path written.
     """
-    result = _guard.check("write", path)
+    result = await _guard.check_async("write", path, workspace_id, agent_id=agent_id)
     if not result.allowed:
         logger.warning(f"[FileIO] WRITE DENIED: {result.reason} → {path}")
         log_audit_event(agent_id, "FILE_WRITE_DENIED", {

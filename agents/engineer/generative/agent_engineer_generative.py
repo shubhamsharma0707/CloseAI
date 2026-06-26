@@ -103,9 +103,10 @@ class GenerativeAI:
         self,
         prompt: str,
         output_path: str,
-        width: int = 512,
-        height: int = 512,
-        steps: int = 20,
+        workspace_id: str,
+        width: int = 1024,
+        height: int = 1024,
+        steps: int = 30,
     ) -> dict:
         """
         Generate an image asset via the local diffusion CLI.
@@ -156,7 +157,7 @@ class GenerativeAI:
             }
 
         # 3. WorkspaceGuard check on output path
-        guard_result = self.workspace_guard.check("write", output_path)
+        guard_result = await self.workspace_guard.check_async("write", output_path, workspace_id, agent_id=AGENT_ID)
         if not guard_result.allowed:
             logger.warning(f"[GenerativeAI] Write DENIED: {guard_result.reason}")
             log_audit_event(AGENT_ID, "GENERATE_ASSET_WRITE_DENIED", {

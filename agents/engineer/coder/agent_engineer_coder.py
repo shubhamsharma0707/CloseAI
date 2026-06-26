@@ -112,7 +112,7 @@ class CoderAI:
         if context_files:
             for fp in context_files:
                 try:
-                    content = read_file(fp)
+                    content = await read_file(fp, workspace_id)
                     file_context += f"\n\n--- {fp} ---\n{content}"
                 except Exception as exc:
                     logger.warning(f"[CoderAI] Could not read context file {fp}: {exc}")
@@ -158,13 +158,13 @@ Do not wrap in triple backticks unless asked."""
     # Tier 1 — Write file
     # ------------------------------------------------------------------
 
-    async def write_code_to_file(self, path: str, content: str) -> dict:
+    async def write_code_to_file(self, path: str, content: str, workspace_id: str) -> dict:
         """Write generated code to a workspace file. Tier 1."""
         if check_kill_switch():
             return {"status": "ERROR", "result": "Kill switch active.", "tier": 1}
 
         try:
-            real_path = write_file(path, content, agent_id=AGENT_ID)
+            real_path = await write_file(path, content, workspace_id, agent_id=AGENT_ID)
             return {"status": "OK", "result": real_path, "tier": RiskTier.TIER_1_WRITE}
         except PermissionError as exc:
             return {"status": "ERROR", "result": str(exc), "tier": RiskTier.TIER_1_WRITE}
@@ -235,5 +235,84 @@ Do not wrap in triple backticks unless asked."""
             "status": "OK" if result.success else "ERROR",
             "result": result.stdout + result.stderr,
             "tier": RiskTier.TIER_2_COMMIT,
+            "approval_id": approval_id,
+        }
+
+    # ------------------------------------------------------------------
+    # Tier 2 — Git Push (requires approval, explicit workspace opt-in)
+    # ------------------------------------------------------------------
+
+    async def push_changes(
+        self,
+        cwd: str,
+        workspace_id: str,
+        remote: str = "origin",
+        branch: str = "HEAD",
+        approval_id: str | None = None,
+    ) -> dict:
+        """
+        Push committed changes to remote. Tier 2.
+        WorkspaceGuard.check_async will deny immediately if allow_git_push is False.
+        """
+        if check_kill_switch():
+            return {"status": "ERROR", "result": "Kill switch active.", "tier": 2}
+
+        # Check workspace permissions (this denies if allow_git_push is False)
+        guard_result = await self.workspace_guard.check_async("git_push", cwd, workspace_id, agent_id=AGENT_ID)
+        if not guard_result.allowed:
+            return {"status": "ERROR", "result": f"WorkspaceGuard: {guard_result.reason}", "tier": 2}
+
+        if not approval_id:
+            raise NeedsApprovalError(
+                action_type="git_push",
+                context={"cwd": cwd, "remote": remote, "branch": branch},
+            )
+
+        from coder.tools.git_tool import git_push
+        result = await git_push(cwd, remote=remote, branch=branch)
+        return {
+            "status": "OK" if result.success else "ERROR",
+            "result": result.stdout + result.stderr,
+            "tier": RiskTier.TIER_2_COMMIT,
+            "approval_id": approval_id,
+        }
+
+    # ------------------------------------------------------------------
+    # Tier 3 — Deploy (requires dual control approval, explicit workspace opt-in)
+    # ------------------------------------------------------------------
+
+    async def deploy(
+        self,
+        cwd: str,
+        workspace_id: str,
+        approval_id: str | None = None,
+    ) -> dict:
+        """
+        Deploy using the workspace's configured deploy_command. Tier 3.
+        WorkspaceGuard.check_async will deny immediately if allow_deploy is False.
+        """
+        if check_kill_switch():
+            return {"status": "ERROR", "result": "Kill switch active.", "tier": 3}
+
+        # Check workspace permissions (this denies if allow_deploy is False)
+        guard_result = await self.workspace_guard.check_async("deploy", cwd, workspace_id, agent_id=AGENT_ID)
+        if not guard_result.allowed:
+            return {"status": "ERROR", "result": f"WorkspaceGuard: {guard_result.reason}", "tier": 3}
+
+        if not approval_id:
+            raise NeedsApprovalError(
+                action_type="deploy",
+                context={"cwd": cwd},
+            )
+
+        from coder.tools.deploy_tool import deploy as run_deploy
+        result = await run_deploy(cwd, workspace_id)
+        if result["status"] == "ERROR":
+            return {"status": "ERROR", "result": result["result"], "tier": 3}
+
+        return {
+            "status": "OK",
+            "result": result["result"],
+            "tier": RiskTier.TIER_3_DEPLOY,
             "approval_id": approval_id,
         }

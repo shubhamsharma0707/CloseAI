@@ -934,7 +934,7 @@ async def create_approval(req: ApprovalRequest):
         "requesting_agent": req.requesting_agent,
         "created_at": datetime.now(timezone.utc).isoformat(),
         "decisions": [],           # list of individual reviewer decisions
-        "required_approvers": 2 if req.severity == "CRITICAL" else 1,
+        "required_approvers": 2 if (req.severity == "CRITICAL" or req.vuln_type == "deploy") else 1,
     }
     async with approval_store_lock:
         approval_store[approval_id] = record
@@ -1829,6 +1829,7 @@ class WorkspaceCreateRequest(BaseModel):
     authorized_approvers: list[str] = []
     allow_git_push: bool = False
     allow_deploy: bool = False
+    deploy_command: list[str] | None = None
 
 
 class WorkspaceRevokeRequest(BaseModel):
@@ -1883,6 +1884,7 @@ async def create_workspace(req: WorkspaceCreateRequest):
             "authorized_approvers": req.authorized_approvers,
             "allow_git_push": req.allow_git_push,
             "allow_deploy": req.allow_deploy,
+            "deploy_command": req.deploy_command,
             "status": "ACTIVE",
             "created_at": datetime.now(timezone.utc).isoformat(),
         }

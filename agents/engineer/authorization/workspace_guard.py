@@ -20,8 +20,10 @@ Usage:
 import logging
 import os
 import re
+import httpx
 from dataclasses import dataclass
 from typing import Optional
+from audit_client import log_audit_event
 
 logger = logging.getLogger("Engineer.WorkspaceGuard")
 
@@ -78,6 +80,52 @@ class WorkspaceGuard:
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    async def check_async(self, action: str, path: str, workspace_id: str, agent_id: str = "AGENT_ENGINEER_CODER") -> GuardResult:
+        """
+        Async-native workspace check using RISHI for workspace metadata.
+        """
+        rishi_url = os.getenv("RISHI_BASE_URL", "http://127.0.0.1:8000")
+        
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{rishi_url}/engineer/workspaces/{workspace_id}")
+                
+            if resp.status_code == 404:
+                logger.warning(f"[WorkspaceGuard] DENIED {action} → WORKSPACE_NOT_FOUND: {workspace_id}")
+                log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "WORKSPACE_NOT_FOUND", "workspace_id": workspace_id, "action": action, "path": path})
+                return GuardResult(allowed=False, reason="WORKSPACE_NOT_FOUND", path=path, action=action)
+                
+            resp.raise_for_status()
+            record = resp.json()
+            
+        except Exception as exc:
+            logger.error(f"[WorkspaceGuard] RISHI unreachable: {exc}")
+            log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "RISHI_UNREACHABLE", "workspace_id": workspace_id, "action": action, "path": path})
+            return GuardResult(allowed=False, reason="RISHI_UNREACHABLE", path=path, action=action)
+
+        if record.get("status") != "ACTIVE":
+            logger.warning(f"[WorkspaceGuard] DENIED {action} → WORKSPACE_REVOKED: {workspace_id}")
+            log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "WORKSPACE_REVOKED", "workspace_id": workspace_id, "action": action, "path": path})
+            return GuardResult(allowed=False, reason="WORKSPACE_REVOKED", path=path, action=action)
+
+        if agent_id not in record.get("authorized_agents", []):
+            logger.warning(f"[WorkspaceGuard] DENIED {action} → AGENT_NOT_AUTHORIZED: {agent_id}")
+            log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "AGENT_NOT_AUTHORIZED", "workspace_id": workspace_id, "action": action, "path": path})
+            return GuardResult(allowed=False, reason="AGENT_NOT_AUTHORIZED", path=path, action=action)
+            
+        if action == "git_push" and not record.get("allow_git_push", False):
+            logger.warning(f"[WorkspaceGuard] DENIED {action} → PUSH_NOT_AUTHORIZED: {workspace_id}")
+            log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "PUSH_NOT_AUTHORIZED", "workspace_id": workspace_id, "action": action, "path": path})
+            return GuardResult(allowed=False, reason="PUSH_NOT_AUTHORIZED", path=path, action=action)
+
+        if action == "deploy" and not record.get("allow_deploy", False):
+            logger.warning(f"[WorkspaceGuard] DENIED {action} → DEPLOY_NOT_AUTHORIZED: {workspace_id}")
+            log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "DEPLOY_NOT_AUTHORIZED", "workspace_id": workspace_id, "action": action, "path": path})
+            return GuardResult(allowed=False, reason="DEPLOY_NOT_AUTHORIZED", path=path, action=action)
+
+        # RISHI checks passed, now run the local pattern boundary check
+        return self.check(action, path)
 
     def check(self, action: str, path: str) -> GuardResult:
         """

@@ -27,7 +27,6 @@ if _KAVACH_AUTH not in sys.path:
 
 # Re-export the Kavach authorization modules for Engineer's use.
 from scope_guard import ScopeGuard, GuardResult          # noqa: F401
-from audit_client import log_audit_event                  # noqa: F401
 from approval_client import (                             # noqa: F401
     request_human_approval,
     poll_for_decision,
@@ -41,7 +40,6 @@ from kill_switch_client import (                          # noqa: F401
 __all__ = [
     "ScopeGuard",
     "GuardResult",
-    "log_audit_event",
     "request_human_approval",
     "poll_for_decision",
     "DecisionRecord",

@@ -77,6 +77,7 @@ async def shell_exec(
     cwd: str,
     timeout: int = DEFAULT_TIMEOUT,
     agent_id: str = "AGENT_ENGINEER_CODER",
+    extra_allowed_binaries: set[str] | None = None,
 ) -> ShellExecResult:
     """
     Runs cmd in a sandboxed subprocess.
@@ -98,7 +99,8 @@ async def shell_exec(
         return ShellExecResult(returncode=1, stdout="", stderr="Empty command.")
 
     binary = os.path.basename(cmd[0])
-    if binary not in ALLOWED_BINARIES:
+    allowed = ALLOWED_BINARIES | (extra_allowed_binaries or set())
+    if binary not in allowed:
         reason = f"BINARY_NOT_ALLOWED: {binary}"
         logger.warning(f"[ShellExec] {reason}")
         log_audit_event(agent_id, "SHELL_EXEC_DENIED", {"cmd": cmd, "reason": reason, "cwd": cwd})
@@ -108,23 +110,24 @@ async def shell_exec(
     log_audit_event(agent_id, "SHELL_EXEC_START", {"cmd": cmd, "cwd": cwd, "timeout": timeout})
 
     timed_out = False
+    proc = await asyncio.create_subprocess_exec(
+        *cmd,
+        cwd=cwd,
+        stdout=asyncio.subprocess.PIPE,
+        stderr=asyncio.subprocess.PIPE,
+        env={**os.environ},
+    )
     try:
-        proc = await asyncio.wait_for(
-            asyncio.create_subprocess_exec(
-                *cmd,
-                cwd=cwd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-                env={**os.environ},
-            ),
-            timeout=timeout,
+        stdout_bytes, stderr_bytes = await asyncio.wait_for(
+            proc.communicate(), timeout=timeout
         )
-        stdout_bytes, stderr_bytes = await proc.communicate()
         returncode = proc.returncode or 0
 
     except asyncio.TimeoutError:
         timed_out = True
         returncode = -1
+        proc.kill()
+        await proc.wait()  # reap the process, avoid a zombie
         stdout_bytes = b""
         stderr_bytes = b"Command timed out."
         logger.warning(f"[ShellExec] TIMEOUT after {timeout}s: {' '.join(cmd)}")

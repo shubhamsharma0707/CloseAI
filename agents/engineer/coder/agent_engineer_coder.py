@@ -91,6 +91,7 @@ class CoderAI:
     async def generate_code(
         self,
         prompt: str,
+        workspace_id: str,
         language: str = "python",
         context_files: list[str] | None = None,
     ) -> dict:

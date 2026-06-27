@@ -2214,9 +2214,17 @@ The available orchestrators are:
 You MUST respond ONLY with a valid JSON object matching this schema:
 {
   "orchestrators": ["chanakya" | "kavach" | "engineer", ...],
-  "sequence": "single" | "sequential" | "parallel",
+  "sequence": "single" | "sequential",
   "reasoning": "one sentence — why these orchestrator(s)"
-}"""
+}
+
+Examples:
+- User: "Calculate the NPV of Project X" -> {"orchestrators": ["chanakya"], "sequence": "single", "reasoning": "Quantitative finance task."}
+- User: "Scan my internal portal for vulnerabilities" -> {"orchestrators": ["kavach"], "sequence": "single", "reasoning": "Security scanning request."}
+- User: "Write a React login component" -> {"orchestrators": ["engineer"], "sequence": "single", "reasoning": "Software engineering request."}
+- User: "Build a new login API and then run a penetration test on it" -> {"orchestrators": ["engineer", "kavach"], "sequence": "sequential", "reasoning": "Requires building software first, then security testing."}
+- User: "Generate an image of a cat and calculate my tax liability" -> {"orchestrators": ["engineer", "chanakya"], "sequence": "sequential", "reasoning": "Independent requests for asset generation and tax calculation."}
+"""
     try:
         from ollama import AsyncClient
         response = await AsyncClient().chat(model='llama3.1:8b', messages=[
@@ -2231,16 +2239,19 @@ You MUST respond ONLY with a valid JSON object matching this schema:
         
         data = json.loads(content)
         orchestrators = [o for o in data.get("orchestrators", []) if o in ["chanakya", "kavach", "engineer"]]
-        if not orchestrators:
-            orchestrators = ["chanakya"]
+        
+        sequence = data.get("sequence", "single")
+        if sequence not in ["single", "sequential"]:
+            sequence = "single"
+            
         return RouterDecision(
             orchestrators=orchestrators,
-            sequence=data.get("sequence", "single"),
+            sequence=sequence,
             reasoning=data.get("reasoning", "Fallback")
         )
     except Exception as e:
         logger.error(f"Routing classification failed: {e}")
-        return RouterDecision(orchestrators=["chanakya"], sequence="single", reasoning="Fallback due to error")
+        return RouterDecision(orchestrators=["ERROR"], sequence="single", reasoning=f"Classification error: {e}")
 
 @app.post("/ask")
 async def rishi_ask(req: AskRequest):
@@ -2256,12 +2267,26 @@ async def rishi_ask(req: AskRequest):
         "reasoning": decision.reasoning,
     })
     
+    import time
+    if "ERROR" in decision.orchestrators:
+        return {
+            "status": "ERROR",
+            "summary": "The request could not be classified. Please retry or be more specific.",
+            "results": [],
+            "session_id": req.session_id,
+            "engagement_id": None
+        }
+        
     context = req.context or {}
     engagement_id = context.get("engagement_id") or context.get("workspace_id")
     if req.session_id:
         if req.session_id not in router_sessions:
+            if len(router_sessions) >= 1000:
+                oldest = next(iter(router_sessions))
+                del router_sessions[oldest]
             router_sessions[req.session_id] = {}
         sess = router_sessions[req.session_id]
+        sess["last_used_timestamp"] = time.time()
         if engagement_id:
             sess["engagement_id"] = engagement_id
         else:
@@ -2304,7 +2329,7 @@ async def rishi_ask(req: AskRequest):
                 result = await instance.run(current_prompt, session_id=req.session_id)
         except Exception as e:
             logger.error(f"[ROUTER] Orchestrator {orch_name} crashed: {e}")
-            results.append({"orchestrator": orch_name, "status": "ERROR", "summary": f"Crash: {e}"})
+            results.append({"orchestrator": orch_name, "status": "ERROR", "summary": f"An internal error occurred while running the {orch_name} agent."})
             break
             
         results.append(result)
@@ -2331,7 +2356,8 @@ async def rishi_ask(req: AskRequest):
                     current_prompt = getattr(getattr(resp, 'message', None), 'content', '')
             except Exception as e:
                 logger.error(f"[ROUTER] Re-grounding failed: {e}")
-                pass 
+                results.append({"orchestrator": "router", "status": "ERROR", "summary": "Failed to synthesize next instruction."})
+                break 
                 
     final_status = results[-1].get("status") if results else "ERROR"
     if final_status in ("NEEDS_APPROVAL", "BLOCKED"):
@@ -2355,6 +2381,12 @@ async def rishi_ask(req: AskRequest):
         except Exception as e:
             logger.error(f"[ROUTER] Synthesis failed: {e}")
             final_summary = " | ".join([str(r.get("summary", "")) for r in results])
+
+    await _write_router_audit("RESPONSE_SYNTHESIZED", {
+        "session_id": req.session_id,
+        "final_status": final_status,
+        "final_summary": final_summary[:200] + "..." if len(final_summary) > 200 else final_summary
+    })
 
     return {
         "status": final_status,

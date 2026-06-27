@@ -89,8 +89,14 @@ def _load_token(agent_id: str) -> str:
     env_key = f"AGENT_TOKEN_{agent_id.upper().replace('-', '_')}"
     token = os.getenv(env_key)
     if not token:
-        # Generate a random token so the server starts, but agents that send
-        # the hardcoded fallback "alpha_secure_node_001" will be rejected.
+        if os.getenv("RISHI_ENV") == "production":
+            raise RuntimeError(
+                f"[FATAL] Missing required token for agent '{agent_id}' "
+                f"(env var: {env_key}). Cannot start in production mode without "
+                "all agent tokens configured. Set RISHI_ENV=development to allow "
+                "random fallback tokens."
+            )
+        # Dev-only: generate a random token so the server starts
         token = secrets.token_hex(32)
         logger.warning(
             f"No token configured for agent '{agent_id}' (env var: {env_key}). "
@@ -799,13 +805,68 @@ shared_sse_transport = SseServerTransport("/messages/")
 # ---------------------------------------------------------------------------
 app = FastAPI(title="RISHI Multi-Tenant Central Node", version="2.0.0")
 
+_ALLOWED_ORIGINS = [
+    o.strip()
+    for o in os.getenv("RISHI_ALLOWED_ORIGINS", "http://localhost:5173,http://127.0.0.1:5173").split(",")
+    if o.strip()
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_ALLOWED_ORIGINS,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# ---------------------------------------------------------------------------
+# SHARED AUTH DEPENDENCY for internal REST routes
+# Apply to any /kavach/* or /engineer/* write endpoints.
+# ---------------------------------------------------------------------------
+def verify_agent_token(
+    x_agent_id: str = Header(None),
+    x_agent_token: str = Header(None),
+) -> str:
+    """
+    Lightweight bearer-token check for internal REST routes.
+    Identical logic to verify_and_route_agent but without the SSE RAM check
+    so it can be used as a general FastAPI Depends().
+    """
+    if not x_agent_id or x_agent_id not in AGENT_REGISTRY:
+        raise HTTPException(status_code=401, detail="Unregistered Agent Identity")
+    raw_token = x_agent_token or ""
+    presented = raw_token.removeprefix("Bearer ").strip()
+    expected = AGENT_TOKENS.get(x_agent_id, "")
+    if not hmac.compare_digest(presented.encode(), expected.encode()):
+        logger.warning(f"Token mismatch for agent '{x_agent_id}' on REST route")
+        raise HTTPException(status_code=401, detail="Invalid Agent Token")
+    return x_agent_id
+
+# ---------------------------------------------------------------------------
+# ANTHROPIC CLIENT — initialized once at startup
+# RISHI_MODEL_BACKEND=anthropic (default) | ollama
+# ---------------------------------------------------------------------------
+RISHI_MODEL_BACKEND = os.getenv("RISHI_MODEL_BACKEND", "anthropic")
+_anthropic_client = None
+try:
+    import anthropic as _anthropic_sdk
+    _ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+    if RISHI_MODEL_BACKEND == "anthropic" and _ANTHROPIC_API_KEY:
+        _anthropic_client = _anthropic_sdk.AsyncAnthropic(api_key=_ANTHROPIC_API_KEY)
+        logger.info("[RISHI] Anthropic client initialized (claude-sonnet-4-5).")
+    elif RISHI_MODEL_BACKEND == "anthropic" and not _ANTHROPIC_API_KEY:
+        logger.warning("[RISHI] RISHI_MODEL_BACKEND=anthropic but ANTHROPIC_API_KEY is not set. Falling back to ollama.")
+        RISHI_MODEL_BACKEND = "ollama"
+except ImportError:
+    logger.warning("[RISHI] anthropic package not installed. Falling back to ollama backend.")
+    RISHI_MODEL_BACKEND = "ollama"
+
+# Track per-orchestrator status for /health
+_agent_status: dict[str, str] = {
+    "chanakya": "idle",
+    "kavach": "idle",
+    "engineer": "idle",
+}
 
 # Mount the transport's POST handler as a proper ASGI sub-application so
 # tool-call POSTs from agents are routed to the correct SSE session.
@@ -917,7 +978,7 @@ async def _write_approval_audit(event: str, detail: dict):
 
 
 @app.post("/kavach/approvals", status_code=201)
-async def create_approval(req: ApprovalRequest):
+async def create_approval(req: ApprovalRequest, _agent: str = Depends(verify_agent_token)):
     """
     Kavach calls this when it encounters a HIGH/CRITICAL finding that needs
     human sign-off.  Returns an approval_id the agent polls until a decision
@@ -1115,7 +1176,7 @@ _load_engagements_from_ledger()
 
 
 @app.post("/kavach/engagements", status_code=201)
-async def create_engagement(req: EngagementCreateRequest):
+async def create_engagement(req: EngagementCreateRequest, _agent: str = Depends(verify_agent_token)):
     """
     Create or update a Kavach engagement.  Every write is:
       - Appended to kavach_engagements.jsonl (tamper-evident, append-only)
@@ -1170,7 +1231,7 @@ async def get_engagement(engagement_id: str):
 
 
 @app.post("/kavach/engagements/{engagement_id}/revoke")
-async def revoke_engagement(engagement_id: str, req: EngagementRevokeRequest):
+async def revoke_engagement(engagement_id: str, req: EngagementRevokeRequest, _agent: str = Depends(verify_agent_token)):
     """
     Immediately revokes an engagement.  ScopeGuard will start denying
     all checks for this engagement_id on the next request — no restart needed.
@@ -1742,7 +1803,7 @@ async def _write_engineer_approval_audit(event: str, detail: dict):
 
 
 @app.post("/engineer/approvals", status_code=201)
-async def create_engineer_approval(req: ApprovalRequest):
+async def create_engineer_approval(req: ApprovalRequest, _agent: str = Depends(verify_agent_token)):
     """
     Engineer orchestrator calls this for Tier 2+ actions requiring human sign-off.
     Same shape as POST /kavach/approvals — reuses ApprovalRequest model.
@@ -1920,7 +1981,7 @@ _load_workspaces_from_ledger()
 
 
 @app.post("/engineer/workspaces", status_code=201)
-async def create_workspace(req: WorkspaceCreateRequest):
+async def create_workspace(req: WorkspaceCreateRequest, _agent: str = Depends(verify_agent_token)):
     """Create a new Engineer workspace authorization record."""
     async with workspace_store_lock:
         if req.workspace_id in workspace_store:
@@ -1956,7 +2017,7 @@ async def get_workspace(workspace_id: str):
 
 
 @app.post("/engineer/workspaces/{workspace_id}/revoke")
-async def revoke_workspace(workspace_id: str, req: WorkspaceRevokeRequest):
+async def revoke_workspace(workspace_id: str, req: WorkspaceRevokeRequest, _agent: str = Depends(verify_agent_token)):
     """
     Immediately revoke a workspace — same pattern as POST /kavach/engagements/{id}/revoke.
     Takes effect on the next WorkspaceGuard check without a process restart.
@@ -2011,18 +2072,25 @@ async def connect_agent(
 @app.get("/health")
 def health_check():
     """
-    Internal health probe.  Returns system metrics without leaking
-    blackboard contents or agent token information.
+    Health probe. Returns system metrics, per-orchestrator agent status,
+    and kill-switch state. Used by the frontend Agent Status sidebar.
     """
     mem = psutil.virtual_memory()
     return {
         "status": "ok",
+        "model_backend": RISHI_MODEL_BACKEND,
         "ram_percent": mem.percent,
         "ram_critical_threshold": CRITICAL_RAM_PERCENT,
         "active_sessions": len(shared_sse_transport._read_stream_writers),
         "blackboard_entry_count": len(shared_blackboard),
         "blackboard_max_keys": MAX_BLACKBOARD_KEYS,
         "registered_agent_count": len(AGENT_REGISTRY),
+        "agents": {
+            "chanakya": _agent_status.get("chanakya", "idle"),
+            "kavach":   _agent_status.get("kavach", "idle"),
+            "engineer": _agent_status.get("engineer", "idle"),
+        },
+        "kill_switch": kill_switch_meta,
     }
 
 
@@ -2087,19 +2155,35 @@ async def chat_endpoint(req: ChatRequest):
                     if code_match:
                         logger.info("Code Interpreter triggered!")
                         code = code_match.group(1)
-                        with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                            f.write(code)
-                            temp_path = f.name
-                        
+                        # Create an isolated scratch directory per execution
+                        scratch_dir = tempfile.mkdtemp(prefix="rishi_exec_")
+                        temp_path = os.path.join(scratch_dir, "script.py")
                         try:
-                            proc = subprocess.run(["python3", temp_path], capture_output=True, text=True, timeout=10)
-                            output = proc.stdout if proc.returncode == 0 else f"Error:\\n{proc.stderr}"
-                            logger.info(f"Code executed. Output: {output.strip()}")
-                        except Exception as e:
-                            output = f"Execution failed: {str(e)}"
-                            logger.error(output)
+                            with open(temp_path, "w") as f:
+                                f.write(code)
+                            # Use the Engineer sandbox (allowlisted binaries, no network)
+                            try:
+                                from agents.engineer.coder.tools.shell_exec import shell_exec
+                                exec_result = shell_exec(
+                                    ["python3", temp_path],
+                                    cwd=scratch_dir,
+                                    timeout=10,
+                                )
+                                output = exec_result.get("stdout", "") or exec_result.get("stderr", "")
+                                if exec_result.get("returncode", 1) != 0:
+                                    output = f"Error:\\n{output}"
+                            except Exception as exec_err:
+                                output = f"Execution failed: {exec_err}"
+                            logger.info(f"Code executed (sandboxed). Output: {output.strip()[:200]}")
+                            # Emit audit entry
+                            await _write_engineer_approval_audit("CODE_INTERPRETER_EXEC", {
+                                "code_snippet": code[:500],
+                                "output_snippet": output[:500],
+                                "scratch_dir": scratch_dir,
+                            })
                         finally:
-                            os.unlink(temp_path)
+                            import shutil
+                            shutil.rmtree(scratch_dir, ignore_errors=True)
                             
                         # SECOND PASS (Streaming) with the result
                         messages_pass2 = [
@@ -2146,16 +2230,22 @@ async def chat_endpoint(req: ChatRequest):
                 code_match = re.search(r'```python\\s*(.*?)\\s*```', first_response, re.DOTALL)
                 if code_match:
                     code = code_match.group(1)
-                    with tempfile.NamedTemporaryFile(mode='w', suffix='.py', delete=False) as f:
-                        f.write(code)
-                        temp_path = f.name
+                    scratch_dir = tempfile.mkdtemp(prefix="rishi_exec_")
+                    temp_path = os.path.join(scratch_dir, "script.py")
                     try:
-                        proc = subprocess.run(["python3", temp_path], capture_output=True, text=True, timeout=10)
-                        output = proc.stdout if proc.returncode == 0 else f"Error:\\n{proc.stderr}"
-                    except Exception as e:
-                        output = f"Execution failed: {str(e)}"
+                        with open(temp_path, "w") as f:
+                            f.write(code)
+                        try:
+                            from agents.engineer.coder.tools.shell_exec import shell_exec
+                            exec_result = shell_exec(["python3", temp_path], cwd=scratch_dir, timeout=10)
+                            output = exec_result.get("stdout", "") or exec_result.get("stderr", "")
+                            if exec_result.get("returncode", 1) != 0:
+                                output = f"Error:\\n{output}"
+                        except Exception as e:
+                            output = f"Execution failed: {str(e)}"
                     finally:
-                        os.unlink(temp_path)
+                        import shutil
+                        shutil.rmtree(scratch_dir, ignore_errors=True)
                         
                     messages_pass2 = [
                         {"role": "system", "content": system_prompt},
@@ -2395,6 +2485,315 @@ async def rishi_ask(req: AskRequest):
         "session_id": req.session_id,
         "engagement_id": engagement_id
     }
+
+# ---------------------------------------------------------------------------
+# /converse — Unified Agentic SSE Endpoint (RISHI v2)
+# ---------------------------------------------------------------------------
+class ConversationRequest(BaseModel):
+    session_id: str
+    message: str
+
+
+# Tool definitions for Anthropic tool-use schema
+_RISHI_TOOLS = [
+    {
+        "name": "call_chanakya",
+        "description": (
+            "Delegate a financial, tax, ESG, or compliance task to the Chanakya specialist agent. "
+            "Use for: tax liability calculations, AML/KYC checks, ESG reporting, financial strategy analysis, "
+            "regulatory research. Do NOT use for general questions answerable without specialist math."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The specific financial/ESG task for Chanakya to perform."}
+            },
+            "required": ["task"],
+        },
+    },
+    {
+        "name": "call_kavach",
+        "description": (
+            "Delegate a security, reconnaissance, or penetration testing task to the Kavach specialist agent. "
+            "Use for: vulnerability scanning, pentest workflows, security audit reports. "
+            "Kavach requires engagement authorization and human approval gates for exploit phases."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The specific security task for Kavach to perform."},
+                "engagement_id": {"type": "string", "description": "Optional engagement ID for scoped operations."}
+            },
+            "required": ["task"],
+        },
+    },
+    {
+        "name": "call_engineer",
+        "description": (
+            "Delegate a software engineering task to the Engineer specialist agent. "
+            "Use for: code generation, writing files, running tests, building projects, deploying. "
+            "Code execution happens inside a secure sandbox. File writes require workspace authorization."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "task": {"type": "string", "description": "The specific engineering task for Engineer to perform."},
+                "workspace_id": {"type": "string", "description": "Optional workspace ID for scoped file operations."}
+            },
+            "required": ["task"],
+        },
+    },
+]
+
+_RISHI_SYSTEM_PROMPT = """You are RISHI, a general-purpose AI assistant built by CloseAI.
+You have access to three specialist agents you can call as tools:
+- Chanakya: financial math, tax calculation, ESG reporting, AML/KYC compliance
+- Kavach: cybersecurity, reconnaissance, penetration testing, vulnerability scanning
+- Engineer: code generation, software design, file writes, testing, deployment
+
+Answer questions directly and well on your own when no specialist is needed.
+Call a specialist agent only when their domain expertise genuinely adds value — e.g., for
+precise tax arithmetic (Chanakya), active security scanning (Kavach), or writing/running code (Engineer).
+Do NOT call specialists for general knowledge, writing, history, science, or conversational questions.
+When agents return NEEDS_APPROVAL or BLOCKED status, explain clearly what needs human review and how to proceed."""
+
+
+async def _run_tool(tool_name: str, tool_input: dict, session_id: str) -> dict:
+    """Invoke the appropriate orchestrator as a tool and return its result dict."""
+    from agents.chanakya.orchestrator import ChanakyaOrchestrator
+    from agents.kavach.orchestrator import KavachOrchestrator
+    from agents.engineer.orchestrator import EngineerOrchestrator
+
+    if tool_name == "call_chanakya":
+        _agent_status["chanakya"] = "busy"
+        try:
+            orch = ChanakyaOrchestrator()
+            result = await orch.run(tool_input["task"], session_id=session_id)
+        finally:
+            _agent_status["chanakya"] = "idle"
+    elif tool_name == "call_kavach":
+        _agent_status["kavach"] = "busy"
+        try:
+            orch = KavachOrchestrator()
+            result = await orch.run(
+                tool_input["task"],
+                engagement_id=tool_input.get("engagement_id"),
+            )
+        finally:
+            _agent_status["kavach"] = "idle"
+    elif tool_name == "call_engineer":
+        _agent_status["engineer"] = "busy"
+        try:
+            orch = EngineerOrchestrator()
+            result = await orch.run(
+                tool_input["task"],
+                workspace_id=tool_input.get("workspace_id"),
+            )
+        finally:
+            _agent_status["engineer"] = "idle"
+    else:
+        result = {"status": "ERROR", "summary": f"Unknown tool: {tool_name}"}
+
+    return result
+
+
+@app.post("/converse")
+async def converse(req: ConversationRequest):
+    """
+    Unified agentic SSE endpoint for RISHI v2.
+    Streams token chunks and agent-call events to the frontend.
+    Replaces the separate /chat and /ask endpoints.
+    """
+    import time as _time_module
+
+    # ── Session management ────────────────────────────────────────────────
+    if req.session_id not in router_sessions:
+        if len(router_sessions) >= 1000:
+            oldest = next(iter(router_sessions))
+            del router_sessions[oldest]
+        router_sessions[req.session_id] = {"history": [], "last_used": _time_module.time()}
+
+    sess = router_sessions[req.session_id]
+    sess["last_used"] = _time_module.time()
+    history: list[dict] = sess.get("history", [])
+
+    # Add user message to history
+    history.append({"role": "user", "content": req.message})
+
+    async def _stream_anthropic():
+        """Main Anthropic tool-use loop, streaming events as SSE."""
+        import json as _json
+        tool_call_budget = 6  # Max tool invocations per turn
+        tool_calls_used = 0
+        messages = list(history)  # work on a copy
+        wall_start = _time_module.time()
+        WALL_TIMEOUT = 120.0
+
+        final_text = ""
+
+        try:
+            while True:
+                if _time_module.time() - wall_start > WALL_TIMEOUT:
+                    _timeout_msg = "\n\n[RISHI: response timed out]"
+                    _timeout_evt = _json.dumps({'type': 'token', 'text': _timeout_msg})
+                    yield f"data: {_timeout_evt}\n\n"
+                    break
+
+                # Call Anthropic with streaming
+                accumulated_text = ""
+                pending_tool_calls: list[dict] = []
+                stop_reason = None
+
+                async with _anthropic_client.messages.stream(
+                    model="claude-sonnet-4-5",
+                    max_tokens=4096,
+                    system=_RISHI_SYSTEM_PROMPT,
+                    messages=messages,
+                    tools=_RISHI_TOOLS,
+                ) as stream:
+                    async for event in stream:
+                        event_type = type(event).__name__
+
+                        if event_type == "RawContentBlockDeltaEvent":
+                            delta = getattr(event, "delta", None)
+                            if delta and getattr(delta, "type", "") == "text_delta":
+                                chunk = delta.text
+                                accumulated_text += chunk
+                                yield f"data: {_json.dumps({'type': 'token', 'text': chunk})}\n\n"
+
+                        elif event_type == "RawContentBlockStartEvent":
+                            block = getattr(event, "content_block", None)
+                            if block and getattr(block, "type", "") == "tool_use":
+                                pending_tool_calls.append({
+                                    "id": block.id,
+                                    "name": block.name,
+                                    "input": "",  # accumulated via delta
+                                })
+
+                        elif event_type == "RawContentBlockDeltaEvent":
+                            delta = getattr(event, "delta", None)
+                            if delta and getattr(delta, "type", "") == "input_json_delta":
+                                if pending_tool_calls:
+                                    pending_tool_calls[-1]["input"] += delta.partial_json
+
+                    # Capture final message for stop_reason and complete tool inputs
+                    final_message = await stream.get_final_message()
+                    stop_reason = final_message.stop_reason
+
+                    # Re-parse tool calls from final message content blocks for accurate inputs
+                    pending_tool_calls = []
+                    for block in final_message.content:
+                        if block.type == "tool_use":
+                            pending_tool_calls.append({
+                                "id": block.id,
+                                "name": block.name,
+                                "input": block.input,
+                            })
+
+                # Append assistant message to history
+                messages.append({"role": "assistant", "content": final_message.content})
+
+                if stop_reason == "end_turn" or not pending_tool_calls:
+                    final_text = accumulated_text
+                    break
+
+                # ── Process tool calls ───────────────────────────────────
+                tool_results = []
+                for tc in pending_tool_calls:
+                    if tool_calls_used >= tool_call_budget:
+                        logger.warning("[CONVERSE] Tool call budget exhausted.")
+                        _budget_msg = "\n\n[Tool call budget reached]"
+                        _budget_evt = _json.dumps({'type': 'token', 'text': _budget_msg})
+                        yield f"data: {_budget_evt}\n\n"
+                        tool_results.append({
+                            "type": "tool_result",
+                            "tool_use_id": tc["id"],
+                            "content": _json.dumps({"status": "ERROR", "summary": "Tool call budget exhausted."}),
+                        })
+                        continue
+
+                    agent_name = tc["name"].replace("call_", "")
+                    task_summary = str(tc["input"].get("task", ""))[:80]
+
+                    # Emit agent_call event
+                    yield f"data: {_json.dumps({'type': 'agent_call', 'agent': agent_name, 'summary': task_summary})}\n\n"
+                    await _write_router_audit("AGENT_TOOL_CALL", {
+                        "session_id": req.session_id,
+                        "tool": tc["name"],
+                        "input_summary": task_summary,
+                    })
+
+                    tool_call_budget -= 1
+                    tool_calls_used += 1
+
+                    try:
+                        result = await _run_tool(tc["name"], tc["input"], req.session_id)
+                    except Exception as exc:
+                        logger.error(f"[CONVERSE] Tool {tc['name']} raised: {exc}")
+                        result = {"status": "ERROR", "summary": str(exc)}
+
+                    # Emit agent_result event
+                    yield f"data: {_json.dumps({'type': 'agent_result', 'agent': agent_name, 'status': result.get('status', 'ERROR'), 'summary': result.get('summary', '')[:200]})}\n\n"
+
+                    tool_results.append({
+                        "type": "tool_result",
+                        "tool_use_id": tc["id"],
+                        "content": _json.dumps(result),
+                    })
+
+                # Feed tool results back into the conversation
+                messages.append({"role": "user", "content": tool_results})
+
+        except Exception as exc:
+            logger.error(f"[CONVERSE] Anthropic stream error: {exc}")
+            _err_msg = f"\n\n[RISHI encountered an error: {exc}]"
+            _err_evt = _json.dumps({'type': 'token', 'text': _err_msg})
+            yield f"data: {_err_evt}\n\n"
+
+        # Update history with final assistant turn
+        history.append({"role": "assistant", "content": final_text or "[No response]"})
+        sess["history"] = history[-40:]  # Keep last 20 turns (40 messages)
+
+        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+
+    async def _stream_ollama():
+        """Ollama fallback path — same SSE event schema as Anthropic path."""
+        import json as _json
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                messages_for_ollama = [{"role": "system", "content": _RISHI_SYSTEM_PROMPT}] + list(history)
+                payload = {"model": "llama3.1:8b", "messages": messages_for_ollama, "stream": True}
+                async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload) as resp:
+                    resp.raise_for_status()
+                    full_text = ""
+                    async for line in resp.aiter_lines():
+                        if line:
+                            try:
+                                chunk_data = _json.loads(line)
+                                if "message" in chunk_data and "content" in chunk_data["message"]:
+                                    chunk = chunk_data["message"]["content"]
+                                    full_text += chunk
+                                    yield f"data: {_json.dumps({'type': 'token', 'text': chunk})}\n\n"
+                            except _json.JSONDecodeError:
+                                pass
+                    history.append({"role": "assistant", "content": full_text})
+                    sess["history"] = history[-40:]
+        except Exception as exc:
+            logger.error(f"[CONVERSE] Ollama stream error: {exc}")
+            yield f"data: {_json.dumps({'type': 'token', 'text': 'RISHI cannot connect to the local Ollama model. Please start Ollama and try again.'})}\n\n"
+        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+
+    if RISHI_MODEL_BACKEND == "anthropic" and _anthropic_client:
+        generator = _stream_anthropic()
+    else:
+        generator = _stream_ollama()
+
+    return StreamingResponse(
+        generator,
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
 
 if __name__ == "__main__":
     import uvicorn

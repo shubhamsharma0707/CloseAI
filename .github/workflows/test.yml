@@ -1,0 +1,124 @@
+name: Secure CI Pipeline
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Harden Runner (Restrict Network Egress)
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          # ====================================================================
+          # NETWORK ALLOWLIST
+          # ====================================================================
+          # Default-deny policy. Only exactly what is needed is allowed.
+          # - pypi.org, files.pythonhosted.org: Python package installs (pip)
+          # - github.com, api.github.com: Checkout code and runner APIs
+          # - registry.npmjs.org: Future-proofing for frontend CI
+          # - ollama.com, registry.ollama.ai: Local LLM installation and model pull
+          allowed-endpoints: >
+            pypi.org:443
+            files.pythonhosted.org:443
+            github.com:443
+            api.github.com:443
+            registry.npmjs.org:443
+            ollama.com:443
+            registry.ollama.ai:443
+
+      # ========================================================================
+      # SECRETS POLICY
+      # ========================================================================
+      # If any external API credential is ever needed in the future, it MUST
+      # be encrypted and scoped via GitHub Secrets, and MUST NEVER be accessible 
+      # from a pull_request trigger originating from a fork (to prevent exfiltration).
+      # Currently, no external secrets are required. All tests are local.
+      # ========================================================================
+
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.10'
+          cache: 'pip'
+
+      - name: Install Dependencies
+        run: pip install -r requirements.txt pytest pytest-asyncio
+
+      - name: Install Local Ollama & Pull Small Model
+        run: |
+          # The local LLM principle is mandatory. We never use external LLM APIs in CI.
+          # SPEED/FIDELITY TRADEOFF: We pull llama3.2:1b for speed instead of the full llama3.1:8b.
+          # We then copy/alias it to llama3.1:8b so the hardcoded model references in RISHI continue to work.
+          curl -fsSL https://ollama.com/install.sh | sh
+          ollama serve &
+          
+          # Wait for Ollama to be ready
+          while ! curl -s http://localhost:11434/api/tags > /dev/null; do
+            sleep 1
+          done
+          
+          # Pull a fast, small model and alias it
+          ollama pull llama3.2:1b
+          ollama cp llama3.2:1b llama3.1:8b
+
+      - name: Generate Disposable Tokens
+        run: |
+          # Never load the real .env or use real secrets. 
+          # We run setup_dev.py to generate fresh, disposable tokens for this specific run.
+          python setup_dev.py
+          
+          # Mask tokens in logs as cheap insurance to prevent accidental leakage
+          while IFS='=' read -r key value; do
+            if [[ $key == AGENT_TOKEN_* ]]; then
+              echo "::add-mask::$value"
+            fi
+          done < .env
+
+      - name: Run Standalone Integration Tests
+        run: |
+          # These scripts spin up and tear down their own RISHI instances.
+          # We run them first so they don't conflict with a long-running background server.
+          python test_engineer_workflow.py
+          python test_full_workflow.py
+
+      - name: Start RISHI Background Service
+        run: |
+          # Start the central router in the background for the pytest suite
+          python RISHI.py &
+          
+          # Wait for health endpoint to return 200 using the existing helper
+          python -c "from test_engineer_workflow import wait_for_server; import sys; sys.exit(0 if wait_for_server(timeout=30.0) else 1)"
+
+      - name: Run Pytest Suite
+        run: |
+          # The build must FAIL if any test fails, blocking the merge.
+          # We run pytest on all remaining test files.
+          pytest -v $(find . -name "test_*.py" ! -name "test_engineer_workflow.py" ! -name "test_full_workflow.py")
+
+      - name: Sanitize and Upload Audit Ledgers
+        if: always()
+        run: |
+          # Only upload ledgers if we strip all token patterns
+          # Even disposable tokens shouldn't be casually stored in artifacts
+          for f in *_audit_ledger.jsonl; do
+            if [ -f "$f" ]; then
+              sed -i -E 's/[a-f0-9]{64}/[REDACTED]/g' "$f"
+            fi
+          done
+      
+      - name: Upload Artifacts
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: audit-ledgers
+          path: '*_audit_ledger.jsonl'
+          retention-days: 7

@@ -228,14 +228,21 @@ class KavachOrchestrator:
         logger.info("✅ KAVACH SECURITY WORKFLOW COMPLETE")
         logger.info("==================================================")
         
+        final_status = "OK"
         # Check if pentest_data had any blocked exploits (e.g. NEEDS_APPROVAL or EXPLOIT_BLOCKED)
         if isinstance(pentest_data, dict):
-            # If pentest_data status is KILL_SWITCH_ACTIVE or similar we could map it
-            # But PentestAgent also handles approvals. If approval was denied, it doesn't halt the whole workflow 
-            # unless we want it to. Wait, PentestAgent just logs EXPLOIT_BLOCKED and continues.
-            pass
+            exploited = pentest_data.get("exploited", [])
+            if any(e.get("status") in ("BLOCKED_BY_POLICY", "EXPLOIT_BLOCKED", "KILL_SWITCH_ACTIVE")
+                   for e in exploited if isinstance(e, dict)):
+                final_status = "BLOCKED"
 
-        return {"status": "OK", "summary": "Security workflow complete."}
+        return {
+            "status": final_status,
+            "summary": (
+                "Security workflow complete with one or more exploits blocked pending human approval."
+                if final_status == "BLOCKED" else "Security workflow complete."
+            ),
+        }
 
     async def run(self, user_prompt: str, engagement_id: str | None = None) -> dict:
         """

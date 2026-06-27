@@ -4,71 +4,113 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Chanakya | Compliance Orchestrator</title>
+    <link href="https://fonts.cdnfonts.com/css/geist" rel="stylesheet">
+    <title>RISHI | Compliance Orchestrator</title>
   </head>
   <body>
+    <!-- Background Canvas -->
+    <canvas id="bg-canvas"></canvas>
+
     <div id="app">
-      <!-- Left Sidebar -->
-      <aside class="sidebar">
-        <div class="brand">
+      <!-- Top Navigation Layer -->
+      <header class="top-nav">
+        <div class="top-nav-brand">
           <div class="brand-icon"></div>
-          Chanakya OS
+          <span>AETHERIS CORE</span>
         </div>
-        <div class="nav-menu">
-          <div class="nav-item active">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
-            Command Arena
+        <div id="orb-canvas-container"></div>
+        <div class="top-nav-actions">
+          <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"></circle><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path></svg>
+          <svg class="icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
+        </div>
+      </header>
+
+      <div class="main-layout">
+        <!-- Left Sidebar -->
+        <aside class="sidebar sidebar-glass">
+          <div class="brand">
+            <div class="brand-icon"></div>
+            RISHI OS
           </div>
-          <div class="nav-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
-            Audit Ledgers
+          <div class="nav-menu">
+            <div class="nav-item active">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="3" y1="9" x2="21" y2="9"></line><line x1="9" y1="21" x2="9" y2="9"></line></svg>
+              Command Arena
+            </div>
+            <div class="nav-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+              Audit Ledgers
+            </div>
+            <div class="nav-item">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+              Settings
+            </div>
           </div>
-          <div class="nav-item">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-            Settings
+        </aside>
+
+        <!-- Main Central Arena -->
+        <main class="main-arena">
+          <div class="arena-header">
+            <h1>Command Center</h1>
+            <p>Submit strategic financial intents for autonomous orchestration.</p>
           </div>
-        </div>
-      </aside>
 
-      <!-- Main Central Arena -->
-      <main class="main-arena">
-        <div class="arena-header">
-          <h1>Command Center</h1>
-          <p>Submit strategic financial intents for autonomous orchestration.</p>
-        </div>
-
-        <div class="command-input-wrapper">
-          <textarea id="promptInput" class="command-input" placeholder="e.g. 'We have a core income of ₹2.5Cr. Calculate tax, then allocate 20% to an Indian green energy fund.'"></textarea>
-          <button id="submitBtn" class="command-submit">Execute</button>
-        </div>
-
-        <div class="pipeline-container" id="pipelineContainer">
-          <!-- Dynamically populated by main.js -->
-        </div>
-
-        <div id="finalReport" class="final-report hidden">
-          <!-- Populated dynamically on completion -->
-        </div>
-
-        <div id="chatResponse" class="chat-response hidden">
-          <div class="chat-header">
-            <span class="chat-icon">🧠</span>
-            <h3>Chanakya AI Advisor</h3>
+          <div class="command-input-wrapper">
+            <textarea id="promptInput" class="command-input" placeholder="e.g. 'We have a core income of ₹2.5Cr. Calculate tax, then allocate 20% to an Indian green energy fund.'"></textarea>
+            <div class="command-actions">
+              <button class="icon-btn" aria-label="Voice Input">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+              </button>
+              <button id="submitBtn" class="command-submit">Execute</button>
+            </div>
           </div>
-          <div id="chatContent" class="chat-content"></div>
-        </div>
-      </main>
 
-      <!-- Right Panel: Escrow Ledger -->
-      <aside class="right-panel">
-        <div class="panel-header">
-          <span>Escrow Ledger</span>
-          <div class="pulse-indicator"></div>
+          <div class="pipeline-container glass-panel" id="pipelineContainer">
+            <!-- Dynamically populated by main.js -->
+          </div>
+
+          <div id="finalReport" class="final-report glass-panel hidden">
+            <!-- Populated dynamically on completion -->
+          </div>
+
+          <div id="chatResponse" class="chat-response glass-panel hidden">
+            <div class="chat-header">
+              <span class="chat-icon">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="var(--accent-blue)" stroke-width="2"><path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"></path></svg>
+              </span>
+              <h3>RISHI AI Advisor</h3>
+            </div>
+            <div id="chatContent" class="chat-content"></div>
+          </div>
+        </main>
+
+        <!-- Right Panel: Escrow Ledger -->
+        <aside class="right-panel glass-panel">
+          <div class="panel-header">
+            <span>Escrow Ledger</span>
+            <div class="pulse-indicator"></div>
+          </div>
+          <div class="escrow-list" id="escrowList">
+            <div class="empty-ledger">No active Escrow Locks. Pipeline is clean.</div>
+          </div>
+        </aside>
+      </div>
+
+      <!-- Bottom Mobile Nav -->
+      <nav class="mobile-nav sidebar-glass">
+        <div class="mobile-nav-item">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 3v18h18"></path><path d="m19 9-5 5-4-4-3 3"></path></svg>
+          <span>Analyze</span>
         </div>
-        <div class="escrow-list" id="escrowList">
-          <div class="empty-ledger">No active Escrow Locks. Pipeline is clean.</div>
+        <div class="mobile-nav-item active">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path><path d="M19 10v2a7 7 0 0 1-14 0v-2"></path><line x1="12" y1="19" x2="12" y2="22"></line></svg>
+          <span>Listen</span>
         </div>
-      </aside>
+        <div class="mobile-nav-item">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"></polyline></svg>
+          <span>Execute</span>
+        </div>
+      </nav>
     </div>
     <script type="module" src="/src/main.js"></script>
   </body>

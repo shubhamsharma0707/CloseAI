@@ -8,3 +8,4 @@ ollama>=0.2
 psutil>=5.9
 reportlab>=4.1
 mcp>=1.0
+anthropic>=0.25

@@ -1,4 +1,6 @@
 import './style.css';
+import { initBackgroundShader } from './utils/background-shader.js';
+import { initOrb, setOrbState } from './utils/orb-visualizer.js';
 
 // DOM Elements
 const promptInput = document.getElementById('promptInput');
@@ -8,6 +10,13 @@ const escrowList = document.getElementById('escrowList');
 const finalReport = document.getElementById('finalReport');
 const chatResponse = document.getElementById('chatResponse');
 const chatContent = document.getElementById('chatContent');
+
+// Unique session ID for this browser tab (persisted in sessionStorage)
+const SESSION_ID = (() => {
+  let id = sessionStorage.getItem('rishi_session_id');
+  if (!id) { id = crypto.randomUUID(); sessionStorage.setItem('rishi_session_id', id); }
+  return id;
+})();
 
 // Pipeline phases definition
 const PHASES = [
@@ -186,7 +195,7 @@ function showFinalReport(amount) {
     </div>
     
     <div class="report-human-summary" style="padding: 16px; background: rgba(37, 99, 235, 0.1); border-left: 4px solid var(--accent-blue); border-radius: 4px; margin-bottom: 24px; color: #e2e8f0; font-size: 15px; line-height: 1.6;">
-      <strong>Summary:</strong> Out of your total money (₹${principal.toLocaleString()}), you will need to pay <strong>₹${tax.toLocaleString()}</strong> to the government as tax. You are safely left with <strong style="color: var(--accent-green);">₹${net.toLocaleString()}</strong> to keep or invest.
+      <strong>Summary:</strong> Out of your total money (₹${principal.toLocaleString()}), you will need to pay <strong style="color: var(--accent-red)">₹${tax.toLocaleString()}</strong> to the government as tax. You are safely left with <strong style="color: var(--accent-green);">₹${net.toLocaleString()}</strong> to keep or invest.
     </div>
 
     <div class="report-grid">
@@ -257,7 +266,7 @@ async function runOrchestration() {
 
   // Phase 0
   setNodeState('parse', 'active');
-  appendLog('parse', 'Waking up Chanakya Master Orchestrator...');
+  appendLog('parse', 'Waking up RISHI Master Orchestrator...');
   await wait(800);
   appendLog('parse', 'LLM intent parsed successfully.', 'log-success');
   appendLog('parse', `Extracted Principal: ${amount}`);
@@ -270,7 +279,7 @@ async function runOrchestration() {
   await wait(1000);
   appendLog('quant', 'Calculated exact tax: 7833000.00');
   appendLog('quant', 'SHA-256 Hash Generated: a8b2...f9e4', 'log-hash');
-  appendLog('quant', 'Written to chanakya_immutable_ledger.log', 'log-success');
+  appendLog('quant', 'Written to rishi_immutable_ledger.log', 'log-success');
   setNodeState('quant', 'completed');
 
   // Phase 2
@@ -310,58 +319,112 @@ async function runConversationalAI(prompt, keepDashboard = false) {
     finalReport.classList.add('hidden');
   }
   chatResponse.classList.remove('hidden');
-  
-  chatContent.innerHTML = '<span style="color: var(--accent-blue);">Chanakya is thinking...</span>';
-  
+  chatContent.innerHTML = '<span class="rishi-thinking">RISHI is thinking<span class="thinking-dots">...</span></span>';
+
+  setOrbState('thinking');
+
   try {
-    const res = await fetch('http://127.0.0.1:8000/chat', {
+    const res = await fetch('http://127.0.0.1:8000/converse', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ prompt, stream: true })
+      body: JSON.stringify({ session_id: SESSION_ID, message: prompt }),
     });
-    
-    if (!res.ok) throw new Error("Network error");
-    
-    chatContent.textContent = ''; // clear thinking state
-    
+
+    if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+    chatContent.innerHTML = ''; // clear thinking indicator
+    let fullText = '';
+    let firstChunk = true;
+
+    // Agent chips container
+    const chipsEl = document.createElement('div');
+    chipsEl.className = 'agent-chips';
+    chatContent.appendChild(chipsEl);
+
+    // Text area for streamed response
+    const textEl = document.createElement('div');
+    textEl.className = 'response-text';
+    chatContent.appendChild(textEl);
+
+    const chipMap = {}; // agent → chip element
+
     const reader = res.body.getReader();
-    const decoder = new TextDecoder("utf-8");
+    const decoder = new TextDecoder('utf-8');
+    let buffer = '';
     let done = false;
-    
+
     while (!done) {
       const { value, done: readerDone } = await reader.read();
       done = readerDone;
       if (value) {
-        const chunkStr = decoder.decode(value, { stream: true });
-        const lines = chunkStr.split('\\n');
-        for (let line of lines) {
-          if (line.startsWith('data: ')) {
-            const dataStr = line.replace('data: ', '').trim();
-            if (dataStr) {
-              try {
-                const data = JSON.parse(dataStr);
-                if (data.chunk) {
-                  chatContent.textContent += data.chunk;
-                } else if (data.error) {
-                  chatContent.textContent += `\\n[Error: ${data.error}]`;
-                }
-              } catch (e) {
-                // Ignore parse errors from partial JSON
-              }
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop(); // keep incomplete last line
+
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue;
+          const raw = line.slice(6).trim();
+          if (!raw) continue;
+
+          let evt;
+          try { evt = JSON.parse(raw); } catch { continue; }
+
+          if (evt.type === 'token') {
+            if (firstChunk) { setOrbState('responding'); firstChunk = false; }
+            fullText += evt.text;
+            // Render markdown-ish: convert \n to <br>
+            textEl.innerHTML = fullText.replace(/\n/g, '<br>');
+            chatContent.scrollTop = chatContent.scrollHeight;
+
+          } else if (evt.type === 'agent_call') {
+            setOrbState('thinking');
+            const chip = document.createElement('span');
+            chip.className = `agent-chip agent-chip--${evt.agent} agent-chip--running`;
+            chip.id = `chip-${evt.agent}-${Date.now()}`;
+            chip.textContent = `${agentIcon(evt.agent)} ${capitalize(evt.agent)} ⚙`;
+            chip.title = evt.summary || '';
+            chipsEl.appendChild(chip);
+            chipMap[evt.agent] = chip;
+
+          } else if (evt.type === 'agent_result') {
+            setOrbState('responding');
+            firstChunk = false;
+            const chip = chipMap[evt.agent];
+            if (chip) {
+              chip.classList.remove('agent-chip--running');
+              chip.classList.add(evt.status === 'OK' ? 'agent-chip--done' : 'agent-chip--blocked');
+              chip.textContent = `${agentIcon(evt.agent)} ${capitalize(evt.agent)} ${
+                evt.status === 'OK' ? '✓' : evt.status === 'BLOCKED' ? '🛑' : '✗'
+              }`;
             }
+
+          } else if (evt.type === 'done') {
+            setOrbState('idle');
           }
         }
       }
     }
   } catch (err) {
-    chatContent.innerHTML = '<span style="color: var(--accent-red);">Error connecting to local AI engine. Ensure RISHI server is running.</span>';
+    setOrbState('idle');
+    chatContent.innerHTML = `<span style="color: var(--accent-red);">Error connecting to RISHI. Ensure the server is running on port 8000. (${err.message})</span>`;
   }
-  
+
   submitBtn.disabled = false;
   submitBtn.textContent = 'Execute';
 }
+
+function agentIcon(agent) {
+  return { chanakya: '₹', kavach: '🛡', engineer: '⚙' }[agent] || '◈';
+}
+
+function capitalize(s) {
+  return s ? s[0].toUpperCase() + s.slice(1) : s;
+}
+
 
 submitBtn.addEventListener('click', runOrchestration);
 
 // Init
 renderPipeline();
+initBackgroundShader('bg-canvas');
+initOrb('orb-canvas-container');

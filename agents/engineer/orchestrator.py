@@ -434,7 +434,16 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
                     })
 
         # ── Aggregate ──────────────────────────────────────────────────────
-        overall_status = "OK" if all(r.get("status") in ("OK", "BLOCKED") for r in results) else "ERROR"
+        has_blocked = any(r.get("status") == "BLOCKED" for r in results)
+        has_error = any(r.get("status") not in ("OK", "BLOCKED") for r in results)
+
+        if has_error:
+            overall_status = "ERROR"
+        elif has_blocked:
+            overall_status = "BLOCKED"
+        else:
+            overall_status = "OK"
+            
         log_audit_event(AGENT_ID, "WORKFLOW_END", {
             "workspace_id": workspace_id,
             "steps_completed": len(results),
@@ -446,7 +455,7 @@ Parse the user's request and return ONLY a valid JSON object with these keys:
         logger.info("=" * 60)
 
         return {
-            "status":          "BLOCKED" if overall_status == "BLOCKED" else overall_status,
+            "status":          overall_status,
             "summary":         f"Engineer workflow completed with status: {overall_status}. {len(results)} steps executed.",
             "steps":           results,
             "workspace_id":    workspace_id,

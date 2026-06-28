@@ -1224,6 +1224,14 @@ async def decide_approval(approval_id: str, req: ApprovalDecision):
             record["status"] = "DENIED"
             record["decided_at"] = datetime.now(timezone.utc).isoformat()
             record["final_signature"] = req.signature
+            
+            agent_id = record.get("requesting_agent", "UNKNOWN")
+            action = record.get("vuln", {}).get("type", "unknown action")
+            await memory_store.record_correction(
+                agent_id=agent_id,
+                what_rishi_did=f"Requested approval for {action}",
+                what_user_wanted="Human explicitly denied this action",
+            )
         else:
             # Count unique APPROVED decisions
             approved_count = len([d for d in record["decisions"] if d["decision"] == "APPROVED"])
@@ -2041,6 +2049,14 @@ async def decide_engineer_approval(approval_id: str, req: ApprovalDecision):
             record["status"] = "DENIED"
             record["decided_at"] = datetime.now(timezone.utc).isoformat()
             record["final_signature"] = req.signature
+            
+            agent_id = record.get("requesting_agent", "UNKNOWN")
+            action = record.get("vuln", {}).get("type", "unknown action")
+            await memory_store.record_correction(
+                agent_id=agent_id,
+                what_rishi_did=f"Requested engineer approval for {action}",
+                what_user_wanted="Human explicitly denied this action",
+            )
         else:
             approved_count = len([d for d in record["decisions"] if d["decision"] == "APPROVED"])
             if approved_count >= record["required_approvers"]:

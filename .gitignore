@@ -8,3 +8,4 @@ __pycache__/
 venv/
 .venv/
 agents/chanakya/phase_1_quantitative/chanakya_immutable_ledger.log
+*.db

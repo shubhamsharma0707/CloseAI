@@ -107,7 +107,21 @@ def main():
     # this same file, the real bootstrap record would never get written —
     # the file existed, so the check short-circuited, but ENG-WORKSPACE-001
     # itself was never in it. Checking for the specific ID fixes that.
-    already_bootstrapped = False
+    core_workspace_record = {
+        "workspace_id": "ENG-WORKSPACE-RISHI-CORE",
+        "project_name": "RISHI Core Project",
+        "root_path": ROOT,
+        "authorized_agents": ["AGENT_ENGINEER_CODER", "AGENT_ENGINEER_DESIGNER", "AGENT_ENGINEER_GENERATIVE"],
+        "authorized_approvers": [],
+        "allow_git_push": False,
+        "allow_deploy": False,
+        "deploy_command": None,
+        "status": "ACTIVE",
+        "created_at": "2026-06-26T00:00:00Z"
+    }
+
+    already_bootstrapped_001 = False
+    already_bootstrapped_core = False
     if os.path.exists(workspace_ledger):
         with open(workspace_ledger) as f:
             for line in f:
@@ -119,15 +133,22 @@ def main():
                 except json.JSONDecodeError:
                     continue
                 if record.get("workspace_id") == "ENG-WORKSPACE-001":
-                    already_bootstrapped = True
-                    break
+                    already_bootstrapped_001 = True
+                if record.get("workspace_id") == "ENG-WORKSPACE-RISHI-CORE":
+                    already_bootstrapped_core = True
 
-    if not already_bootstrapped:
-        with open(workspace_ledger, "a") as f:
+    with open(workspace_ledger, "a") as f:
+        if not already_bootstrapped_001:
             f.write(json.dumps(workspace_record) + "\n")
-        print("  ✅  Created ENG-WORKSPACE-001 in engineer_workspaces.jsonl")
-    else:
-        print("  ✅  ENG-WORKSPACE-001 already present in ledger")
+            print("  ✅  Created ENG-WORKSPACE-001 in engineer_workspaces.jsonl")
+        else:
+            print("  ✅  ENG-WORKSPACE-001 already present in ledger")
+
+        if not already_bootstrapped_core:
+            f.write(json.dumps(core_workspace_record) + "\n")
+            print("  ✅  Created ENG-WORKSPACE-RISHI-CORE in engineer_workspaces.jsonl")
+        else:
+            print("  ✅  ENG-WORKSPACE-RISHI-CORE already present in ledger")
 
     print(f"\n✅  Tokens written to {ENV_FILE}")
     print("\nNext steps:")

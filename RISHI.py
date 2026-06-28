@@ -28,6 +28,7 @@ import logging
 import os
 import secrets
 import quant_solvers
+import memory_store
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation, ROUND_HALF_EVEN
 from concurrent.futures import ProcessPoolExecutor
@@ -169,6 +170,25 @@ AGENT_REGISTRY: dict[str, dict] = {
         "allowed_tools": [],   # GenerativeAI — wraps local CLI, no MCP tools needed
     },
 }
+
+# ---------------------------------------------------------------------------
+# 3b. MEMORY TOOL GRANTS
+#     Every registered agent gets read access to long-term memory
+#     (recall / recall_recent_episodes) — checking precedent before acting
+#     is cheap and should never be gated. Write access (remember) is
+#     reserved for orchestrator-level agents, not every Tier-0 sub-agent,
+#     so durable facts don't get flooded with low-signal writes.
+# ---------------------------------------------------------------------------
+_MEMORY_WRITE_AGENTS = {
+    "rishi_core_node",
+    "agent_chanakya_deterministic",
+    "agent_chanakya_critical",
+    "agent_chanakya_adaptability",
+}
+for _agent_id, _agent_def in AGENT_REGISTRY.items():
+    _agent_def["allowed_tools"] = list(_agent_def["allowed_tools"]) + ["recall", "recall_recent_episodes"]
+    if _agent_id in _MEMORY_WRITE_AGENTS:
+        _agent_def["allowed_tools"].append("remember")
 
 # Pre-load tokens at startup
 AGENT_TOKENS: dict[str, str] = {
@@ -775,6 +795,17 @@ TOOL_IMPLEMENTATIONS: dict[str, tuple] = {
     ),
 }
 
+# Merge in RISHI's persistent-memory tools (remember / recall / recall_recent_episodes).
+# Defined in memory_store.py — kept in a separate module since memory is its own
+# concern (SQLite-backed, survives restarts) distinct from the in-memory blackboard above.
+TOOL_IMPLEMENTATIONS.update(memory_store.MEMORY_TOOL_IMPLEMENTATIONS)
+
+# Initialize the memory DB and backfill from existing hash-chained ledgers on import,
+# so memory is warm before any agent connects — same pattern as
+# _load_engagements_from_ledger() below for engagement state.
+memory_store.init_db()
+memory_store.backfill_all_ledgers(project_root=os.path.dirname(__file__))
+
 
 # ---------------------------------------------------------------------------
 # 8. SCOPED MCP SERVER FACTORY
@@ -861,6 +892,34 @@ except ImportError:
     logger.warning("[RISHI] anthropic package not installed. Falling back to ollama backend.")
     RISHI_MODEL_BACKEND = "ollama"
 
+# ---------------------------------------------------------------------------
+# OPENAI / OPENROUTER / OLLAMA CLIENT
+# ---------------------------------------------------------------------------
+_openai_client = None
+try:
+    import openai as _openai_sdk
+    _OPENROUTER_API_KEY = os.getenv("OPENROUTER_API_KEY", "")
+    
+    if RISHI_MODEL_BACKEND == "openrouter" and _OPENROUTER_API_KEY:
+        _openai_client = _openai_sdk.AsyncOpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=_OPENROUTER_API_KEY,
+        )
+        logger.info("[RISHI] OpenRouter client initialized (openai sdk).")
+    elif RISHI_MODEL_BACKEND == "openrouter" and not _OPENROUTER_API_KEY:
+        logger.warning("[RISHI] RISHI_MODEL_BACKEND=openrouter but OPENROUTER_API_KEY is not set. Falling back to ollama.")
+        RISHI_MODEL_BACKEND = "ollama"
+        
+    if RISHI_MODEL_BACKEND == "ollama":
+        _openai_client = _openai_sdk.AsyncOpenAI(
+            base_url="http://127.0.0.1:11434/v1",
+            api_key="ollama",
+        )
+        logger.info("[RISHI] Ollama client initialized (openai sdk) for full tool calling.")
+except ImportError:
+    if RISHI_MODEL_BACKEND in ["openrouter", "ollama"]:
+        logger.error("[RISHI] openai package not installed. Cannot use openrouter or ollama backend with tool calling.")
+
 # Track per-orchestrator status for /health
 _agent_status: dict[str, str] = {
     "chanakya": "idle",
@@ -912,6 +971,88 @@ async def kavach_audit_log(req: KavachAuditPayload):
             f.write(json.dumps(record) + "\n")
             
     return {"status": "ok", "hash": new_hash}
+
+
+# ---------------------------------------------------------------------------
+# 11b. KAVACH MEMORY ENDPOINTS
+#      Kavach does not go through AGENT_REGISTRY / the MCP-SSE path at all —
+#      it authenticates with the single shared AGENT_TOKEN_KAVACH_CORE secret
+#      over plain REST (see kavach_audit_log above). Memory access for Kavach
+#      therefore needs its own REST surface using the identical HMAC pattern,
+#      rather than a TOOL_IMPLEMENTATIONS entry which only MCP-connected
+#      agents (Chanakya, rishi_core_node) can reach.
+# ---------------------------------------------------------------------------
+class KavachMemoryWriteRequest(BaseModel):
+    agent_id: str
+    payload: str       # JSON-encoded {"key":..., "value":..., "category":...} or {"task_summary":...,"outcome":...,"detail":...}
+    timestamp: str
+    signature: str
+
+
+class KavachMemoryReadRequest(BaseModel):
+    agent_id: str
+    payload: str        # JSON-encoded {"query":...} or {"n":...,"outcome":...}
+    timestamp: str
+    signature: str
+
+
+def _verify_kavach_hmac(payload: str, timestamp: str, signature: str) -> None:
+    """Same verification kavach_audit_log uses — raises HTTPException on failure."""
+    expected_secret = os.getenv("AGENT_TOKEN_KAVACH_CORE", "default_kavach_secret").encode()
+    message = f"{payload}|{timestamp}".encode()
+    expected_sig = hmac.new(expected_secret, message, hashlib.sha256).hexdigest()
+    if not hmac.compare_digest(signature, expected_sig):
+        raise HTTPException(status_code=401, detail="Invalid HMAC signature")
+
+
+@app.post("/kavach/memory/remember")
+async def kavach_memory_remember(req: KavachMemoryWriteRequest):
+    """Kavach equivalent of the `remember` MCP tool, reached over REST."""
+    _verify_kavach_hmac(req.payload, req.timestamp, req.signature)
+    data = json.loads(req.payload)
+    result = await memory_store.remember(
+        key=data["key"],
+        value=data["value"],
+        category=data.get("category", "kavach"),
+    )
+    return {"status": "ok", "result": result}
+
+
+@app.post("/kavach/memory/episode")
+async def kavach_memory_episode(req: KavachMemoryWriteRequest):
+    """Kavach equivalent of record_episode, reached over REST."""
+    _verify_kavach_hmac(req.payload, req.timestamp, req.signature)
+    data = json.loads(req.payload)
+    episode_id = await memory_store.record_episode(
+        agent_id=req.agent_id,
+        task_summary=data["task_summary"],
+        outcome=data.get("outcome", "partial"),
+        detail=data.get("detail", ""),
+        duration_ms=data.get("duration_ms"),
+    )
+    return {"status": "ok", "episode_id": episode_id}
+
+
+@app.post("/kavach/memory/recall")
+async def kavach_memory_recall(req: KavachMemoryReadRequest):
+    """Kavach equivalent of the `recall` MCP tool, reached over REST."""
+    _verify_kavach_hmac(req.payload, req.timestamp, req.signature)
+    data = json.loads(req.payload)
+    result = await memory_store.recall(query=data["query"], category=data.get("category"))
+    return {"status": "ok", "facts": json.loads(result)}
+
+
+@app.post("/kavach/memory/recent-episodes")
+async def kavach_memory_recent_episodes(req: KavachMemoryReadRequest):
+    """Kavach equivalent of the `recall_recent_episodes` MCP tool, reached over REST."""
+    _verify_kavach_hmac(req.payload, req.timestamp, req.signature)
+    data = json.loads(req.payload)
+    result = await memory_store.recall_recent_episodes(
+        agent_id=data.get("agent_id"),
+        n=data.get("n", 10),
+        outcome=data.get("outcome"),
+    )
+    return {"status": "ok", "episodes": json.loads(result)}
 
 
 # ---------------------------------------------------------------------------
@@ -2545,6 +2686,20 @@ _RISHI_TOOLS = [
     },
 ]
 
+# Tool definitions for OpenAI tool-use schema (OpenRouter/Groq/etc)
+_OPENAI_TOOLS = []
+for _tool in _RISHI_TOOLS:
+    _oai_tool = {
+        "type": "function",
+        "function": {
+            "name": _tool["name"],
+            "description": _tool["description"],
+            "parameters": _tool["input_schema"]
+        }
+    }
+    _OPENAI_TOOLS.append(_oai_tool)
+
+
 _RISHI_SYSTEM_PROMPT = """You are RISHI, a general-purpose AI assistant built by CloseAI.
 You have access to three specialist agents you can call as tools:
 - Chanakya: financial math, tax calculation, ESG reporting, AML/KYC compliance
@@ -2756,6 +2911,140 @@ async def converse(req: ConversationRequest):
 
         yield f"data: {_json.dumps({'type': 'done'})}\n\n"
 
+    async def _stream_openai_compatible():
+        import json as _json
+        import time as _time_module
+        
+        wall_start = _time_module.time()
+        tool_calls_used = 0
+        tool_call_budget = 6
+        WALL_TIMEOUT = 120.0
+        final_text = ""
+        
+        _model = "anthropic/claude-3.5-sonnet" if RISHI_MODEL_BACKEND == "openrouter" else "llama3.1:8b"
+
+        try:
+            while True:
+                if _time_module.time() - wall_start > WALL_TIMEOUT:
+                    _timeout_msg = "\n\n[RISHI: response timed out]"
+                    _timeout_evt = _json.dumps({'type': 'token', 'text': _timeout_msg})
+                    yield f"data: {_timeout_evt}\n\n"
+                    break
+
+                accumulated_text = ""
+                pending_tool_calls = {}
+                stop_reason = None
+                
+                messages_for_or = [{"role": "system", "content": _RISHI_SYSTEM_PROMPT}] + list(history)
+
+                # The OpenAI SDK streaming interface
+                stream = await _openai_client.chat.completions.create(
+                    model=_model,
+                    messages=messages_for_or,
+                    tools=_OPENAI_TOOLS,
+                    stream=True,
+                )
+
+                async for chunk in stream:
+                    delta = chunk.choices[0].delta
+                    
+                    if delta.content:
+                        content_piece = delta.content
+                        accumulated_text += content_piece
+                        yield f"data: {_json.dumps({'type': 'token', 'text': content_piece})}\n\n"
+                        
+                    if delta.tool_calls:
+                        for tc_chunk in delta.tool_calls:
+                            idx = tc_chunk.index
+                            if idx not in pending_tool_calls:
+                                pending_tool_calls[idx] = {
+                                    "id": tc_chunk.id,
+                                    "type": "function",
+                                    "function": {"name": tc_chunk.function.name or "", "arguments": ""}
+                                }
+                            if tc_chunk.function.name:
+                                pending_tool_calls[idx]["function"]["name"] += tc_chunk.function.name
+                            if tc_chunk.function.arguments:
+                                pending_tool_calls[idx]["function"]["arguments"] += tc_chunk.function.arguments
+
+                    if chunk.choices[0].finish_reason:
+                        stop_reason = chunk.choices[0].finish_reason
+
+                # Capture final assistant turn for history
+                assistant_message = {
+                    "role": "assistant",
+                    "content": accumulated_text or None,
+                }
+                
+                tool_calls_list = list(pending_tool_calls.values())
+                if tool_calls_list:
+                    assistant_message["tool_calls"] = tool_calls_list
+
+                history.append(assistant_message)
+
+                if stop_reason != "tool_calls" and not tool_calls_list:
+                    final_text = accumulated_text
+                    break
+
+                # Process tool calls
+                tool_results = []
+                for tc in tool_calls_list:
+                    if tool_calls_used >= tool_call_budget:
+                        logger.warning("[CONVERSE] Tool call budget exhausted.")
+                        _budget_msg = "\n\n[Tool call budget reached]"
+                        _budget_evt = _json.dumps({'type': 'token', 'text': _budget_msg})
+                        yield f"data: {_budget_evt}\n\n"
+                        tool_results.append({
+                            "role": "tool",
+                            "tool_call_id": tc["id"],
+                            "content": _json.dumps({"status": "ERROR", "summary": "Tool call budget exhausted."}),
+                        })
+                        continue
+
+                    func_name = tc["function"]["name"]
+                    agent_name = func_name.replace("call_", "")
+                    try:
+                        func_args = _json.loads(tc["function"]["arguments"])
+                    except:
+                        func_args = {}
+                    
+                    task_summary = str(func_args.get("task", ""))[:80]
+                    
+                    yield f"data: {_json.dumps({'type': 'agent_call', 'agent': agent_name, 'summary': task_summary})}\n\n"
+                    await _write_router_audit("AGENT_TOOL_CALL", {
+                        "session_id": req.session_id,
+                        "tool": func_name,
+                        "input_summary": task_summary,
+                    })
+                    
+                    tool_call_budget -= 1
+                    tool_calls_used += 1
+                    
+                    try:
+                        result = await _run_tool(func_name, func_args, req.session_id)
+                    except Exception as exc:
+                        result = {"status": "ERROR", "summary": str(exc)}
+                        
+                    yield f"data: {_json.dumps({'type': 'agent_result', 'agent': agent_name, 'status': result.get('status', 'ERROR'), 'summary': result.get('summary', '')[:200]})}\n\n"
+                    
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc["id"],
+                        "content": _json.dumps(result),
+                    })
+
+                for tr in tool_results:
+                    history.append(tr)
+
+        except Exception as exc:
+            logger.error(f"[CONVERSE] OpenRouter stream error: {exc}")
+            _err_msg = f"\n\n[RISHI encountered an error: {exc}]"
+            _err_evt = _json.dumps({'type': 'token', 'text': _err_msg})
+            yield f"data: {_err_evt}\n\n"
+
+        sess["history"] = history[-40:]
+        yield f"data: {_json.dumps({'type': 'done'})}\n\n"
+
     async def _stream_ollama():
         """Ollama fallback path — same SSE event schema as Anthropic path."""
         import json as _json
@@ -2785,8 +3074,11 @@ async def converse(req: ConversationRequest):
 
     if RISHI_MODEL_BACKEND == "anthropic" and _anthropic_client:
         generator = _stream_anthropic()
+    elif RISHI_MODEL_BACKEND in ["openrouter", "ollama"] and _openai_client:
+        generator = _stream_openai_compatible()
     else:
-        generator = _stream_ollama()
+        # Fallback if clients fail to initialize (shouldn't happen in normal paths)
+        generator = _stream_openai_compatible()
 
     return StreamingResponse(
         generator,

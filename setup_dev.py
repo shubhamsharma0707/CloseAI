@@ -101,13 +101,33 @@ def main():
         "created_at": "2026-06-26T00:00:00Z"
     }
     
-    # Write only if doesn't exist
-    if not os.path.exists(workspace_ledger):
-        with open(workspace_ledger, "w") as f:
+    # Write only if ENG-WORKSPACE-001 specifically isn't already present.
+    # NOTE: previously this checked only `not os.path.exists(workspace_ledger)`,
+    # which meant that once the test suite appended its own fixture rows to
+    # this same file, the real bootstrap record would never get written —
+    # the file existed, so the check short-circuited, but ENG-WORKSPACE-001
+    # itself was never in it. Checking for the specific ID fixes that.
+    already_bootstrapped = False
+    if os.path.exists(workspace_ledger):
+        with open(workspace_ledger) as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    record = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if record.get("workspace_id") == "ENG-WORKSPACE-001":
+                    already_bootstrapped = True
+                    break
+
+    if not already_bootstrapped:
+        with open(workspace_ledger, "a") as f:
             f.write(json.dumps(workspace_record) + "\n")
         print("  ✅  Created ENG-WORKSPACE-001 in engineer_workspaces.jsonl")
     else:
-        print("  ✅  Workspace ledger already exists")
+        print("  ✅  ENG-WORKSPACE-001 already present in ledger")
 
     print(f"\n✅  Tokens written to {ENV_FILE}")
     print("\nNext steps:")

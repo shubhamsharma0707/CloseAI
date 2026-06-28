@@ -170,6 +170,8 @@ Do not wrap in triple backticks unless asked."""
         except FileExistsError:
             raise NeedsApprovalError(action_type="file_overwrite", context={"path": path})
         except PermissionError as exc:
+            if "CORE_FILE_REQUIRES_TIER3" in str(exc):
+                raise NeedsApprovalError(action_type="write_core_file", context={"path": path})
             return {"status": "ERROR", "result": str(exc), "tier": RiskTier.TIER_1_WRITE}
 
     # ------------------------------------------------------------------

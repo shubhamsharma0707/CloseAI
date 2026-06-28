@@ -95,3 +95,33 @@ def describe_tier(tier: RiskTier) -> dict:
         "requires_approval": tier.requires_approval(),
         "requires_dual_control": tier.requires_dual_control(),
     }
+
+
+def classify_action_for_path(action_type: str, path: str) -> RiskTier:
+    """
+    Returns the RiskTier for the given action_type and path.
+    Force-escalates to RiskTier.TIER_3_DEPLOY if the path matches core system files.
+    """
+    import re
+    base_tier = classify_action(action_type)
+    
+    # Core system files that require Tier 3 escalation
+    escalation_patterns = [
+        r"RISHI\.py$",
+        r"agents/[^/]+/authorization/.*",
+        r".*_audit_ledger\.jsonl$",
+        r"test_.*\.py$",
+        r"memory_store\.py$",
+        r"self_correction\.py$",
+        r"\.env$"
+    ]
+    
+    # Normalize path for matching
+    norm_path = path.replace("\\", "/")
+    
+    for pattern in escalation_patterns:
+        if re.search(pattern, norm_path):
+            return RiskTier.TIER_3_DEPLOY if RiskTier.TIER_3_DEPLOY > base_tier else base_tier
+            
+    return base_tier
+

@@ -127,6 +127,23 @@ class WorkspaceGuard:
 
         # RISHI checks passed, now run the local pattern boundary check
         local_result = self.check(action, path)
+        if not local_result.allowed:
+            local_result.workspace_info = record
+            return local_result
+
+        # Phase 3: Risk Tier Escalation for Core Files
+        # We need to import this here to avoid circular imports if any, or just import it at the top.
+        from risk_tier import classify_action_for_path, RiskTier
+        tier = classify_action_for_path(action, path)
+        
+        # If the tier is 3, but the action itself wasn't originally a deploy action,
+        # it means the path forced the escalation. We deny it here to require human approval.
+        # (Tier 3 deploy actions are handled by allow_deploy check above).
+        if tier == RiskTier.TIER_3_DEPLOY and action not in ("deploy", "deploy_production", "deploy_staging"):
+            logger.warning(f"[WorkspaceGuard] DENIED {action} → CORE_FILE_REQUIRES_TIER3: {path}")
+            log_audit_event(agent_id, "WORKSPACE_GUARD_DENIED", {"reason": "CORE_FILE_REQUIRES_TIER3", "workspace_id": workspace_id, "action": action, "path": path})
+            return GuardResult(allowed=False, reason="CORE_FILE_REQUIRES_TIER3", path=path, action=action, workspace_info=record)
+
         local_result.workspace_info = record
         return local_result
 
